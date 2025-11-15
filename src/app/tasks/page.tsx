@@ -3,16 +3,20 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
-import { CheckSquare, Plus, Search, Filter, Edit, Trash2, Calendar, Clock, LayoutGrid, List } from 'lucide-react';
+import { CheckSquare, Plus, Search, Filter, Edit, Trash2, Calendar, LayoutGrid, List } from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { DndContext, DragEndEvent, closestCorners } from '@dnd-kit/core';
+import { KanbanColumn } from '@/components/custom/kanban-column';
+import { SortableTaskCard } from '@/components/custom/sortable-task-card';
+import { toast } from '@/hooks/use-toast';
 
 const taskSchema = z.object({
   title: z.string().min(1, 'Título é obrigatório'),
   description: z.string().optional(),
   priority: z.enum(['baixa', 'media', 'alta']),
-  status: z.enum(['pendente', 'em_andamento', 'concluida']),
+  status: z.enum(['pendente', 'em_andamento', 'concluida', 'cancelada']),
   dueDate: z.string().optional(),
   assignedTo: z.string().optional(),
   clientId: z.string().optional(),
@@ -20,12 +24,14 @@ const taskSchema = z.object({
 
 type TaskFormData = z.infer<typeof taskSchema>;
 
+type TaskStatus = 'pendente' | 'em_andamento' | 'concluida' | 'cancelada';
+
 interface Task {
   id: string;
   title: string;
   description?: string;
   priority: 'baixa' | 'media' | 'alta';
-  status: 'pendente' | 'em_andamento' | 'concluida';
+  status: TaskStatus;
   dueDate?: string;
   assignedTo?: string;
   clientId?: string;
@@ -41,6 +47,13 @@ interface Client {
   id: string;
   name: string;
 }
+
+const STATUS_COLUMNS: { id: TaskStatus; title: string; color: string }[] = [
+  { id: 'pendente', title: 'Pendente', color: 'bg-slate-400' },
+  { id: 'em_andamento', title: 'Em Andamento', color: 'bg-blue-500' },
+  { id: 'concluida', title: 'Concluída', color: 'bg-green-500' },
+  { id: 'cancelada', title: 'Cancelada', color: 'bg-red-500' },
+];
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -129,10 +142,18 @@ export default function TasksPage() {
       );
       setTasks(updatedTasks);
       saveTasks(updatedTasks);
+      toast({
+        title: "Tarefa Atualizada",
+        description: `A tarefa "${newTask.title}" foi atualizada com sucesso.`,
+      });
     } else {
       const updatedTasks = [newTask, ...tasks];
       setTasks(updatedTasks);
       saveTasks(updatedTasks);
+      toast({
+        title: "Tarefa Criada",
+        description: `A tarefa "${newTask.title}" foi criada com sucesso.`,
+      });
     }
 
     setIsModalOpen(false);
@@ -146,6 +167,11 @@ export default function TasksPage() {
     const updatedTasks = tasks.filter(task => task.id !== id);
     setTasks(updatedTasks);
     saveTasks(updatedTasks);
+    toast({
+      title: "Tarefa Excluída",
+      description: "A tarefa foi removida permanentemente.",
+      variant: "destructive",
+    });
   };
 
   const openEditModal = (task: Task) => {
@@ -162,10 +188,11 @@ export default function TasksPage() {
     setIsModalOpen(true);
   };
 
-  const filteredTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    task.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const getClientName = (clientId?: string) => {
+    if (!clientId) return null;
+    const client = clients.find(c => c.id === clientId);
+    return client?.name || 'Cliente Desconhecido';
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -176,26 +203,47 @@ export default function TasksPage() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'concluida': return 'bg-green-100 text-green-700';
-      case 'em_andamento': return 'bg-blue-100 text-blue-700';
-      case 'pendente': return 'bg-slate-100 text-slate-700';
-      default: return 'bg-slate-100 text-slate-700';
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over) return;
+
+    const taskId = active.id as string;
+    const newStatus = over.id as TaskStatus;
+
+    if (active.data.current?.sortable.containerId === newStatus) {
+      // Se o drop for na mesma coluna, apenas reordena (lógica de reordenação não implementada, mas evita atualização desnecessária)
+      return;
+    }
+
+    if (['pendente', 'em_andamento', 'concluida', 'cancelada'].includes(newStatus)) {
+      const updatedTasks = tasks.map(task => {
+        if (task.id === taskId) {
+          return { ...task, status: newStatus };
+        }
+        return task;
+      });
+
+      setTasks(updatedTasks);
+      saveTasks(updatedTasks);
+      toast({
+        title: "Status Atualizado",
+        description: `Tarefa movida para "${STATUS_COLUMNS.find(c => c.id === newStatus)?.title}".`,
+      });
     }
   };
 
-  const getClientName = (clientId?: string) => {
-    if (!clientId) return null;
-    const client = clients.find(c => c.id === clientId);
-    return client?.name;
-  };
+  const filteredTasks = tasks.filter(task =>
+    task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    getClientName(task.clientId)?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const tasksByStatus = {
-    pendente: filteredTasks.filter(t => t.status === 'pendente'),
-    em_andamento: filteredTasks.filter(t => t.status === 'em_andamento'),
-    concluida: filteredTasks.filter(t => t.status === 'concluida'),
-  };
+  const tasksByStatus = filteredTasks.reduce((acc, task) => {
+    acc[task.status] = acc[task.status] || [];
+    acc[task.status].push(task);
+    return acc;
+  }, {} as Record<TaskStatus, Task[]>);
 
   const TaskCard = ({ task }: { task: Task }) => {
     const clientName = getClientName(task.clientId);
@@ -211,7 +259,7 @@ export default function TasksPage() {
               </span>
             </div>
             {task.description && (
-              <p className="text-sm text-slate-600 mb-2">{task.description}</p>
+              <p className="text-sm text-slate-600 mb-2 line-clamp-2">{task.description}</p>
             )}
             <div className="flex flex-col gap-1 text-sm text-slate-500">
               {task.dueDate && (
@@ -232,7 +280,7 @@ export default function TasksPage() {
               )}
             </div>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1 ml-4">
             <button
               onClick={() => openEditModal(task)}
               className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
@@ -274,6 +322,7 @@ export default function TasksPage() {
                         ? 'bg-blue-600 text-white' 
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
+                    title="Visualização Kanban"
                   >
                     <LayoutGrid className="h-5 w-5" />
                   </button>
@@ -284,6 +333,7 @@ export default function TasksPage() {
                         ? 'bg-blue-600 text-white' 
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
+                    title="Visualização Lista"
                   >
                     <List className="h-5 w-5" />
                   </button>
@@ -344,43 +394,33 @@ export default function TasksPage() {
                 </button>
               </div>
             ) : viewMode === 'kanban' ? (
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                    <span className="w-3 h-3 bg-slate-400 rounded-full"></span>
-                    Pendente ({tasksByStatus.pendente.length})
-                  </h3>
-                  <div>
-                    {tasksByStatus.pendente.map(task => (
-                      <TaskCard key={task.id} task={task} />
-                    ))}
-                  </div>
+              <DndContext 
+                collisionDetection={closestCorners}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="grid grid-cols-4 gap-4">
+                  {STATUS_COLUMNS.map(column => (
+                    <KanbanColumn 
+                      key={column.id} 
+                      id={column.id} 
+                      title={column.title} 
+                      tasks={tasksByStatus[column.id] || []}
+                      color={column.color}
+                    >
+                      {(tasksByStatus[column.id] || []).map(task => (
+                        <SortableTaskCard 
+                          key={task.id} 
+                          task={task} 
+                          clientName={getClientName(task.clientId)}
+                          getPriorityColor={getPriorityColor}
+                          openEditModal={openEditModal}
+                          deleteTask={deleteTask}
+                        />
+                      ))}
+                    </KanbanColumn>
+                  ))}
                 </div>
-
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                    <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-                    Em Andamento ({tasksByStatus.em_andamento.length})
-                  </h3>
-                  <div>
-                    {tasksByStatus.em_andamento.map(task => (
-                      <TaskCard key={task.id} task={task} />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-green-50 rounded-lg p-4">
-                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                    <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                    Concluída ({tasksByStatus.concluida.length})
-                  </h3>
-                  <div>
-                    {tasksByStatus.concluida.map(task => (
-                      <TaskCard key={task.id} task={task} />
-                    ))}
-                  </div>
-                </div>
-              </div>
+              </DndContext>
             ) : (
               <div className="space-y-4">
                 {filteredTasks.map((task) => (
@@ -455,6 +495,7 @@ export default function TasksPage() {
                       <option value="pendente">Pendente</option>
                       <option value="em_andamento">Em Andamento</option>
                       <option value="concluida">Concluída</option>
+                      <option value="cancelada">Cancelada</option>
                     </select>
                   </div>
                 </div>

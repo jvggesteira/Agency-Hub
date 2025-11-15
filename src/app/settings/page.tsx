@@ -3,6 +3,52 @@
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
 import { Settings as SettingsIcon, User, Bell, Lock, Palette, Database } from 'lucide-react';
+import Link from 'next/link';
+
+const settingsItems = [
+  { 
+    title: 'Perfil', 
+    description: 'Informações da agência e dados pessoais', 
+    icon: User, 
+    href: '/settings/profile',
+    color: 'from-blue-500 to-purple-600'
+  },
+  { 
+    title: 'Notificações', 
+    description: 'Configure alertas e notificações', 
+    icon: Bell, 
+    href: '/settings/notifications',
+    color: 'from-green-500 to-emerald-600'
+  },
+  { 
+    title: 'Segurança', 
+    description: 'Senha e autenticação', 
+    icon: Lock, 
+    href: '/settings/security',
+    color: 'from-orange-500 to-red-600'
+  },
+  { 
+    title: 'Aparência', 
+    description: 'Tema e personalização', 
+    icon: Palette, 
+    href: '/settings/appearance',
+    color: 'from-purple-500 to-pink-600'
+  },
+  { 
+    title: 'Integrações', 
+    description: 'Meta Ads, Google Ads e APIs', 
+    icon: Database, 
+    href: '/settings/integrations',
+    color: 'from-cyan-500 to-blue-600'
+  },
+  { 
+    title: 'Geral', 
+    description: 'Configurações gerais do sistema', 
+    icon: SettingsIcon, 
+    href: '/settings/general',
+    color: 'from-slate-500 to-slate-700'
+  },
+];
 
 export default function SettingsPage() {
   return (
@@ -19,53 +65,22 @@ export default function SettingsPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
-              <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4">
-                <User className="h-6 w-6 text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Perfil</h3>
-              <p className="text-sm text-slate-600">Informações da agência e dados pessoais</p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
-              <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mb-4">
-                <Bell className="h-6 w-6 text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Notificações</h3>
-              <p className="text-sm text-slate-600">Configure alertas e notificações</p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
-              <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center mb-4">
-                <Lock className="h-6 w-6 text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Segurança</h3>
-              <p className="text-sm text-slate-600">Senha e autenticação</p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
-              <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center mb-4">
-                <Palette className="h-6 w-6 text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Aparência</h3>
-              <p className="text-sm text-slate-600">Tema e personalização</p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
-              <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mb-4">
-                <Database className="h-6 w-6 text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Integrações</h3>
-              <p className="text-sm text-slate-600">Meta Ads, Google Ads e APIs</p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
-              <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center mb-4">
-                <SettingsIcon className="h-6 w-6 text-white" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Geral</h3>
-              <p className="text-sm text-slate-600">Configurações gerais do sistema</p>
-            </div>
+            {settingsItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link 
+                  key={item.title} 
+                  href={item.href}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer block"
+                >
+                  <div className={`h-12 w-12 rounded-lg bg-gradient-to-br ${item.color} flex items-center justify-center mb-4`}>
+                    <Icon className="h-6 w-6 text-white" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">{item.title}</h3>
+                  <p className="text-sm text-slate-600">{item.description}</p>
+                </Link>
+              );
+            })}
           </div>
         </main>
       </div>

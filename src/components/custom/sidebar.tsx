@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Clientes', href: '/clients', icon: Users },
   { name: 'Tarefas', href: '/tasks', icon: CheckSquare },
   { name: 'Financeiro', href: '/finances', icon: DollarSign },
@@ -37,12 +37,12 @@ export function Sidebar() {
     <div className="flex h-full w-64 flex-col bg-gradient-to-b from-slate-900 to-slate-800 border-r border-slate-700">
       {/* Logo */}
       <div className="flex h-16 items-center justify-center border-b border-slate-700 px-6">
-        <div className="flex items-center gap-2">
+        <Link href="/dashboard" className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
             <BarChart3 className="h-5 w-5 text-white" />
           </div>
           <span className="text-xl font-bold text-white">AgencyHub</span>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation */}
