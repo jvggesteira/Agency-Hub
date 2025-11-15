@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
-import { CheckSquare, Plus, Search, Filter, Edit, Trash2, Calendar, LayoutGrid, List } from 'lucide-react';
+import { CheckSquare, Plus, Search, Filter, Edit, Trash2, Calendar, LayoutGrid, List, X } from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,6 +25,7 @@ const taskSchema = z.object({
 type TaskFormData = z.infer<typeof taskSchema>;
 
 type TaskStatus = 'pendente' | 'em_andamento' | 'concluida' | 'cancelada';
+type TaskPriority = 'baixa' | 'media' | 'alta' | 'all';
 
 interface Task {
   id: string;
@@ -60,10 +61,13 @@ export default function TasksPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+  const [priorityFilter, setPriorityFilter] = useState<TaskPriority>('all');
+  const [clientFilter, setClientFilter] = useState<string>('all');
 
   const {
     register,
@@ -233,11 +237,20 @@ export default function TasksPage() {
     }
   };
 
-  const filteredTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    getClientName(task.clientId)?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const applyFilters = (task: Task) => {
+    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getClientName(task.clientId)?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
+    const matchesClient = clientFilter === 'all' || task.clientId === clientFilter;
+
+    return matchesPriority && matchesClient;
+  };
+
+  const filteredTasks = tasks.filter(applyFilters);
 
   const tasksByStatus = filteredTasks.reduce((acc, task) => {
     acc[task.status] = acc[task.status] || [];
@@ -365,7 +378,10 @@ export default function TasksPage() {
                   className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+              <button 
+                onClick={() => setIsFilterModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              >
                 <Filter className="h-5 w-5 text-slate-600" />
                 Filtros
               </button>
@@ -432,7 +448,7 @@ export default function TasksPage() {
         </main>
       </div>
 
-      {/* Modal */}
+      {/* Modal Tarefa (Criação/Edição) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
@@ -565,6 +581,82 @@ export default function TasksPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Filtros */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Filtrar Tarefas</h2>
+                <button
+                  onClick={() => setIsFilterModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Prioridade
+                  </label>
+                  <select
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value as TaskPriority)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">Todas</option>
+                    <option value="alta">Alta</option>
+                    <option value="media">Média</option>
+                    <option value="baixa">Baixa</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Cliente
+                  </label>
+                  <select
+                    value={clientFilter}
+                    onChange={(e) => setClientFilter(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">Todos os Clientes</option>
+                    {clients.map(client => (
+                      <option key={client.id} value={client.id}>
+                        {client.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPriorityFilter('all');
+                    setClientFilter('all');
+                    setIsFilterModalOpen(false);
+                  }}
+                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  Limpar Filtros
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFilterModalOpen(false)}
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all"
+                >
+                  Aplicar Filtros
+                </button>
+              </div>
             </div>
           </div>
         </div>
