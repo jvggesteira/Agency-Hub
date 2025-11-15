@@ -13,7 +13,9 @@ import {
   Bell, 
   Settings,
   Briefcase,
-  UserCog
+  UserCog,
+  TrendingUp, // Adicionado para DRE
+  Activity // Adicionado para Produtividade
 } from 'lucide-react';
 
 const navigation = [
@@ -21,6 +23,8 @@ const navigation = [
   { name: 'Clientes', href: '/clients', icon: Users },
   { name: 'Tarefas', href: '/tasks', icon: CheckSquare },
   { name: 'Financeiro', href: '/finances', icon: DollarSign },
+  { name: 'DRE', href: '/dre', icon: TrendingUp }, // Novo
+  { name: 'Produtividade', href: '/productivity', icon: Activity }, // Novo
   { name: 'Dashboards', href: '/dashboards', icon: BarChart3 },
   { name: 'Projetos Freelancer', href: '/freelancer-projects', icon: Briefcase },
   { name: 'Documentos', href: '/documents', icon: FolderOpen },
