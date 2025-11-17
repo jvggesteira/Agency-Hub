@@ -14,7 +14,8 @@ import {
   Settings,
   Briefcase,
   UserCog,
-  Activity // Adicionado para Produtividade
+  Activity,
+  TrendingUp // Adicionado para DRE
 } from 'lucide-react';
 
 const navigation = [
@@ -22,7 +23,7 @@ const navigation = [
   { name: 'Clientes', href: '/clients', icon: Users },
   { name: 'Tarefas', href: '/tasks', icon: CheckSquare },
   { name: 'Financeiro', href: '/finances', icon: DollarSign },
-  // { name: 'DRE', href: '/dre', icon: TrendingUp }, // Removido
+  { name: 'DRE', href: '/dre', icon: TrendingUp }, // Re-adicionado
   { name: 'Produtividade', href: '/productivity', icon: Activity },
   { name: 'Dashboards', href: '/dashboards', icon: BarChart3 },
   { name: 'Projetos Freelancer', href: '/freelancer-projects', icon: Briefcase },
