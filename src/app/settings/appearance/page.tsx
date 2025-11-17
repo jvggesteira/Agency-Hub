@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
 import { Palette, Sun, Moon } from 'lucide-react';
@@ -47,7 +48,7 @@ export default function AppearanceSettingsPage() {
                   theme === 'dark' ? 'border-blue-600 ring-4 ring-blue-100' : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
-                <Moon className="h-6 w-6 text-slate-800 mb-2" />
+                Moon className="h-6 w-6 text-slate-800 mb-2" />
                 <p className="font-medium">Escuro</p>
                 <p className="text-sm text-slate-500">Interface escura para ambientes com pouca luz.</p>
               </div>
