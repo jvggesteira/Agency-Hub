@@ -1,109 +1,135 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  Users, 
-  CheckSquare, 
-  DollarSign, 
-  BarChart3, 
-  FolderOpen, 
-  Target, 
-  Bell, 
-  Settings,
-  Briefcase,
-  UserCog,
-  Activity,
-  TrendingUp,
-  LogOut // Adicionado para logout
-} from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { getInitials } from '@/lib/utils';
+import {
+  LayoutDashboard, Users, CheckSquare, DollarSign,
+  BarChart2, Zap, PieChart, Briefcase, Folder,
+  Target, Bell, Users2, Settings, LogOut,
+  ChevronLeft, ChevronRight, BarChart3, Megaphone // <--- AGORA ESTÁ INCLUSO
+} from 'lucide-react';
 
+// O restante do seu código continua...
+
+// Configuração dos itens do menu
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Clientes', href: '/clients', icon: Users },
+  { name: 'CRM', href: '/crm', icon: Megaphone },
   { name: 'Tarefas', href: '/tasks', icon: CheckSquare },
   { name: 'Financeiro', href: '/finances', icon: DollarSign },
-  { name: 'DRE', href: '/dre', icon: TrendingUp },
-  { name: 'Produtividade', href: '/productivity', icon: Activity },
-  { name: 'Dashboards', href: '/dashboards', icon: BarChart3 },
+  { name: 'DRE', href: '/dre', icon: BarChart2 },
+  { name: 'Produtividade', href: '/productivity', icon: Zap },
+  { name: 'Dashboards', href: '/dashboards', icon: PieChart },
   { name: 'Projetos Freelancer', href: '/freelancer-projects', icon: Briefcase },
-  { name: 'Documentos', href: '/documents', icon: FolderOpen },
+  { name: 'Documentos', href: '/documents', icon: Folder },
   { name: 'Metas', href: '/goals', icon: Target },
   { name: 'Alertas', href: '/alerts', icon: Bell },
-  { name: 'Equipe', href: '/team', icon: UserCog },
+  { name: 'Equipe', href: '/team', icon: Users2 },
   { name: 'Configurações', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
-
-  const getInitials = (firstName: string, lastName: string) => {
-    const first = firstName.charAt(0).toUpperCase();
-    const last = lastName.charAt(0).toUpperCase();
-    return `${first}${last}`;
-  };
+  
+  // Estado para controlar se está colapsado ou não
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
-    <div className="flex h-full w-64 flex-col bg-gradient-to-b from-slate-900 to-slate-800 border-r border-slate-700">
+    <div 
+      className={`
+        relative flex flex-col h-full bg-[#11061e] border-r border-slate-800
+        transition-all duration-300 ease-in-out
+        ${isCollapsed ? 'w-20' : 'w-64'}
+      `}
+    >
+      {/* Botão de Alternar (Toggle) */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="absolute -right-3 top-6 bg-slate-800 border border-slate-600 text-slate-300 rounded-full p-1 hover:bg-slate-700 hover:text-white transition-colors z-50"
+      >
+        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+      </button>
+
       {/* Logo */}
-      <div className="flex h-16 items-center justify-center border-b border-slate-700 px-6">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+      <div className={`flex h-16 items-center border-b border-slate-800 ${isCollapsed ? 'justify-center' : 'px-6'}`}>
+        <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
+          <div className="h-8 w-8 min-w-[2rem] rounded-lg bg-slate-800 flex items-center justify-center">
             <BarChart3 className="h-5 w-5 text-white" />
           </div>
-          <span className="text-xl font-bold text-white">AgencyHub</span>
+          
+          {/* Texto do Logo (some se estiver fechado) */}
+          <span className={`text-xl font-bold text-white whitespace-nowrap transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
+            GM Hub
+          </span>
         </Link>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+      {/* Navegação */}
+      <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700">
         {navigation.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
-          
+
           return (
             <Link
               key={item.name}
               href={item.href}
+              title={isCollapsed ? item.name : ''} // Mostra tooltip nativo quando fechado
               className={`
                 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200
+                ${isCollapsed ? 'justify-center' : ''}
                 ${isActive 
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg shadow-blue-500/20' 
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-slate-800 text-white shadow-md' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
                 }
               `}
             >
-              <Icon className="h-5 w-5" />
-              {item.name}
+              <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+              
+              {/* Texto do Link (some se estiver fechado) */}
+              <span className={`whitespace-nowrap transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
+                {item.name}
+              </span>
             </Link>
           );
         })}
       </nav>
 
-      {/* User Info & Logout */}
-      <div className="border-t border-slate-700 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-              <span className="text-sm font-semibold text-white">
-                {user ? getInitials(user.first_name, user.last_name) : 'AG'}
-              </span>
+      {/* Info do Usuário e Logout */}
+      <div className="border-t border-slate-800 p-4 overflow-hidden">
+        <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+          
+          {/* Avatar + Info */}
+          <div className={`flex items-center gap-3 overflow-hidden ${isCollapsed ? 'justify-center' : ''}`}>
+            <div className="h-10 w-10 min-w-[2.5rem] rounded-full bg-slate-950 flex items-center justify-center border border-slate-800 text-white font-semibold text-sm">
+              {user ? getInitials(user.first_name, user.last_name) : 'GM'}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user ? `${user.first_name} ${user.last_name}` : 'Carregando...'}</p>
-              <p className="text-xs text-slate-400 truncate">{user?.email || 'admin@agencia.com'}</p>
+            
+            <div className={`flex flex-col min-w-0 transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
+              <p className="text-sm font-medium text-white truncate">
+                {user ? `${user.first_name} ${user.last_name}` : 'Carregando...'}
+              </p>
+              <p className="text-xs text-slate-400 truncate">
+                {user?.email || 'admin@agencia.com'}
+              </p>
             </div>
           </div>
-          <button 
-            onClick={signOut}
-            title="Sair"
-            className="p-2 rounded-full text-slate-400 hover:bg-slate-700 hover:text-white transition-colors flex-shrink-0"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
+
+          {/* Botão Sair (some se estiver muito fechado ou vira um ícone pequeno) */}
+          {!isCollapsed && (
+            <button
+              onClick={signOut}
+              title="Sair"
+              className="p-2 rounded-full text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </div>
     </div>

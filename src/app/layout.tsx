@@ -3,8 +3,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/hooks/use-auth";
-import { AuthGuard } from "@/components/custom/auth-guard";
+import AuthGuard from "@/components/custom/auth-guard";
 import "./globals.css";
+import { ThemeProvider } from "@/context/theme-context";
 // Import all available fonts for AI usage
 import "../lib/fonts";
 
@@ -36,12 +37,17 @@ export default function RootLayout({
       >
         {/* Usando tag script nativa para evitar conflito de hidratação com o Next.js Script component */}
         <script src="/lasy-bridge.js" />
-        <AuthProvider>
-          <AuthGuard>
+<script src="/easy-bridge.js" />
+
+{/* 🔴 NOVO: ThemeProvider deve ser o mais externo aqui */}
+<ThemeProvider> 
+    <AuthProvider>
+        <AuthGuard>
             {children}
-          </AuthGuard>
-        </AuthProvider>
-        <Toaster />
+        </AuthGuard>
+    </AuthProvider>
+</ThemeProvider>   
+<Toaster />
       </body>
     </html>
   );

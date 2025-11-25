@@ -75,35 +75,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Substitua da linha 78 até a 115 por isto:
   const fetchUserProfile = async (supabaseUser: any): Promise<UserProfile | null> => {
     if (!supabaseUser) return null;
 
-    // Busca TUDO da tabela profiles (*) para garantir que permissions e role venham
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('*') 
+      .select('first_name, last_name, avatar_url')
       .eq('id', supabaseUser.id)
       .single();
 
     if (profileError) {
       console.error('Error fetching profile:', profileError);
-      // Fallback básico se falhar o banco
+      // Fallback profile if DB fails
       return {
         id: supabaseUser.id,
         email: supabaseUser.email || '',
         first_name: supabaseUser.email?.split('@')[0] || 'Usuário',
         last_name: '',
-        permissions: {}, 
-        role: 'colaborador'
+        permissions: defaultPermissions,
       };
     }
 
-    // Retorna os dados combinados
+    const { data: permissionsData, error: permissionsError } = await supabase
+      .from('team_permissions')
+      .select('*')
+      .eq('user_id', supabaseUser.id)
+      .single();
+
+    const permissions = permissionsData ? formatPermissions(permissionsData) : defaultPermissions;
+
     return {
       id: supabaseUser.id,
       email: supabaseUser.email || '',
-      ...profileData, // Espalha os dados do banco (incluindo permissions)
+      first_name: profileData?.first_name || supabaseUser.email?.split('@')[0] || 'Usuário',
+      last_name: profileData?.last_name || '',
+      avatar_url: profileData?.avatar_url,
+      permissions,
     };
   };
 
@@ -119,46 +126,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsLoading(false);
   };
 
-useEffect(() => {
-  // 1. Definição do Listener (Ouve mudanças após o carregamento inicial)
-  const { data: subscription } = supabase.auth.onAuthStateChange(
-    (event, session) => {
-      // O listener NÃO altera isLoading. Ele apenas atualiza o usuário.
+  useEffect(() => {
+    refreshUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session?.user) {
           fetchUserProfile(session.user).then(setUser);
-        } else {
-          setUser(null);
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
-        // router.push('/login'); // Já foi apagado/removido anteriormente
+        router.push('/login');
       }
-    }
-  );
+      setIsLoading(false);
+    });
 
-  // 2. FUNÇÃO DE CARREGAMENTO INICIAL (Rodar apenas uma vez)
-  async function checkInitialSession() {
-    // Tenta obter a sessão *diretamente* (fora do listener)
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (user) {
-      // Define o usuário e o perfil
-      await fetchUserProfile(user).then(setUser);
-    } else {
-      setUser(null);
-    }
-    
-    // ESTE É O PONTO CRÍTICO: SÓ AQUI O CARREGAMENTO TERMINA
-    setIsLoading(false); 
-  }
-
-  checkInitialSession();
-  
-  // Limpeza (unsubscribe)
-  return () => subscription.unsubscribe();
-
-}, [router]);
+    return () => subscription.unsubscribe();
+  }, [router]);
 
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
