@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     // IMPORTANTE: Adicionei redirectTo para garantir que o link de email funcione
     const { data: authData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
       data: { name: name },
-      redirectTo: `${new URL(req.url).origin}/auth/callback` // Ou apenas a URL base do site
+      redirectTo: `${new URL(req.url).origin}/auth/callback?next=/update-password`
     });
 
     if (inviteError) {
