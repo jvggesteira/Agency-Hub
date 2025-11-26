@@ -335,23 +335,13 @@ export default function CRMPage() {
   };
   
   // --- AÇÕES GERAIS ---
-  const convertToClient = async (lead: Lead) => {
-    // 1. Verificação segura: Evita erros se o email estiver vazio ou duplicado
-    if (lead.email && lead.email.trim() !== '') {
-        const { data: existing } = await supabase
-            .from('clients')
-            .select('id')
-            .eq('email', lead.email)
-            .maybeSingle(); // .maybeSingle() é mais seguro que .single()
+const convertToClient = async (lead: Lead) => {
+    console.log("🔄 Convertendo lead em cliente (permitindo duplicidade):", lead.email);
 
-        if (existing) {
-             toast({ title: "Aviso", description: "Cliente já existe com este email.", variant: "destructive" });
-             return;
-        }
-    }
+    // REMOVIDO: A verificação de email duplicado. 
+    // Agora o sistema vai tentar criar sempre.
 
-    // 2. Criação do Cliente
-    // Ajustado para 'contract_start_date' (padrão do banco) para evitar erro de coluna
+    // Tenta inserir o cliente
     const { error } = await supabase.from('clients').insert({
       name: lead.title,
       email: lead.email,
@@ -361,6 +351,30 @@ export default function CRMPage() {
       contract_start_date: new Date().toISOString().split('T')[0], 
       status: 'active'
     });
+    
+    if (error) {
+        console.error("Erro ao criar cliente:", error);
+        
+        // Fallback: Se der erro de coluna inexistente, tenta o nome antigo (camelCase)
+        if (error.message.includes('column "contract_start_date"')) {
+            await supabase.from('clients').insert({
+                name: lead.title,
+                email: lead.email,
+                phone: lead.phone || '',
+                company: lead.company || '',
+                notes: `[Origem CRM] ${lead.notes || ''}`,
+                contractStartDate: new Date().toISOString().split('T')[0], 
+                status: 'active'
+            });
+             toast({ title: "🎉 Cliente Fechado!", description: "Salvo (formato antigo).", className: "bg-green-600 text-white" });
+        } else {
+             // Se o erro for outro (ex: violação de constraint no banco), avisamos
+             toast({ title: "Erro", description: `Erro no banco: ${error.message}`, variant: "destructive" });
+        }
+    } else {
+        toast({ title: "🎉 Cliente Fechado!", description: `${lead.title} foi cadastrado como novo cliente!`, className: "bg-green-600 text-white border-none" });
+    }
+  };
     
     if (error) {
         console.error("Erro ao criar cliente:", error);
