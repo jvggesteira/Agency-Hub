@@ -1,18 +1,15 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/dashboard';
 
-  console.log("🔄 Callback iniciado. Code presente?", !!code);
-
   if (code) {
     const cookieStore = await cookies();
     
-    // Configuração correta usando @supabase/ssr para Next.js 15
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -27,27 +24,37 @@ export async function GET(request: Request) {
                 cookieStore.set(name, value, options)
               )
             } catch (err) {
-              // Ignora erro se for chamado de um Server Component
-              console.warn("Erro ao definir cookies:", err);
+              console.warn("Erro de Cookie (ignorar se server-side):", err);
             }
           },
         },
       }
     );
     
-    // Tenta trocar o código pela sessão
+    // Tenta trocar o código
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     
     if (!error) {
-      console.log("✅ Sucesso! Redirecionando para:", next);
-      return NextResponse.redirect(`${origin}${next}`);
+      // SUCESSO: Redireciona
+      const forwardedHost = request.headers.get('x-forwarded-host'); // Para Vercel
+      const isLocal = origin.includes('localhost');
+      
+      // Garante que o redirecionamento vá para o domínio certo
+      const baseUrl = isLocal ? origin : `https://${forwardedHost || 'agency-hub-eight.vercel.app'}`;
+      
+      return NextResponse.redirect(`${baseUrl}${next}`);
     } else {
-      console.error("❌ Erro na troca do código:", error.message);
+      // ERRO: Mostra na tela
+      return new NextResponse(
+        JSON.stringify({ 
+          status: "Erro Fatal no Callback", 
+          message: error.message, 
+          code_param: code 
+        }, null, 2), 
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
     }
-  } else {
-    console.error("❌ Nenhum código encontrado na URL.");
   }
 
-  // Se falhar, manda para o login com o erro visível
-  return NextResponse.redirect(`${origin}/login?error=auth_code_error`);
+  return new NextResponse("Erro: Nenhum código encontrado na URL.", { status: 400 });
 }
