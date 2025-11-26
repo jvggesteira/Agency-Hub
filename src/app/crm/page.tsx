@@ -286,37 +286,45 @@ export default function CRMPage() {
   
   // --- AQUI ESTA A CORREÇÃO: CONVERSÃO SEM BLOQUEIO DE DUPLICIDADE ---
   const convertToClient = async (lead: Lead) => {
-    console.log("🔄 Convertendo lead em cliente (permitindo duplicidade):", lead.email);
+    console.log("🔄 Convertendo lead em cliente:", lead.email);
 
+    // Tenta inserir usando camelCase (contractStartDate) que é o mais provável no seu banco
     const { error } = await supabase.from('clients').insert({
       name: lead.title,
       email: lead.email,
       phone: lead.phone || '',
       company: lead.company || '',
       notes: `[Origem CRM] ${lead.notes || ''}`,
-      contract_start_date: new Date().toISOString().split('T')[0], 
+      contractStartDate: new Date().toISOString().split('T')[0], // <--- MUDAMOS AQUI
       status: 'active'
     });
     
     if (error) {
-        console.error("Erro ao criar cliente:", error);
+        console.error("Erro ao criar cliente (Tentativa 1):", error);
         
-        if (error.message.includes('column "contract_start_date"')) {
-            await supabase.from('clients').insert({
+        // TENTATIVA DE SEGURANÇA: Se der erro na coluna de data, salva SEM a data
+        // Isso garante que você não perde a venda, mesmo que a data fique vazia.
+        if (error.message.includes('column') || error.message.includes('contract')) {
+             console.log("⚠️ Tentando salvar sem a data de contrato...");
+             const { error: error2 } = await supabase.from('clients').insert({
                 name: lead.title,
                 email: lead.email,
                 phone: lead.phone || '',
                 company: lead.company || '',
                 notes: `[Origem CRM] ${lead.notes || ''}`,
-                contractStartDate: new Date().toISOString().split('T')[0], 
                 status: 'active'
             });
-             toast({ title: "🎉 Cliente Fechado!", description: "Salvo (formato antigo).", className: "bg-green-600 text-white" });
+
+            if (error2) {
+                toast({ title: "Erro Fatal", description: `Não foi possível criar o cliente: ${error2.message}`, variant: "destructive" });
+            } else {
+                toast({ title: "🎉 Cliente Criado!", description: "Cliente salvo (sem data de contrato).", className: "bg-yellow-600 text-white" });
+            }
         } else {
              toast({ title: "Erro", description: `Erro no banco: ${error.message}`, variant: "destructive" });
         }
     } else {
-        toast({ title: "🎉 Cliente Fechado!", description: `${lead.title} foi cadastrado como novo cliente!`, className: "bg-green-600 text-white border-none" });
+        toast({ title: "🎉 Cliente Fechado!", description: `${lead.title} agora está na aba Clientes!`, className: "bg-green-600 text-white border-none" });
     }
   };
 
