@@ -1,76 +1,73 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { type EmailOtpType } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   
-  // No nosso template, 'code' carrega o Token Hash
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/dashboard';
-  const type = searchParams.get('type') as EmailOtpType | null;
+  
+  // Força a leitura como string para garantir a comparação
+  const type = searchParams.get('type') as string | null;
 
-  console.log(`🔄 Callback iniciado. Tipo: ${type || 'OAuth'}, Code presente? ${!!code}`);
+  console.log(`🔄 Callback Acionado | Type: ${type} | Code: ${code ? 'Sim' : 'Não'}`);
 
   if (code) {
     const cookieStore = await cookies();
-    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
+          getAll() { return cookieStore.getAll() },
           setAll(cookiesToSet) {
             try {
               cookiesToSet.forEach(({ name, value, options }) =>
                 cookieStore.set(name, value, options)
               )
-            } catch (err) {
-              console.warn("Erro de Cookie:", err);
-            }
+            } catch (err) { console.warn("Cookie error:", err) }
           },
         },
       }
     );
-    
-    let error = null;
 
-    // LÓGICA INTELIGENTE:
-    // Se for convite ou recuperação de senha, usamos verifyOtp (não precisa de PKCE)
-    if (type === 'invite' || type === 'recovery') {
-        console.log("📧 Processando fluxo de E-mail (Invite/Recovery)...");
-        const { error: otpError } = await supabase.auth.verifyOtp({
-            type: type,
-            token_hash: code, // Aqui usamos o código como hash
+    // LÓGICA SIMPLIFICADA E ROBUSTA
+    // Se tiver qualquer tipo explícito (invite, recovery, magiclink), usa verifyOtp
+    if (type === 'invite' || type === 'recovery' || type === 'magiclink' || type === 'signup') {
+        console.log(`📧 Fluxo E-mail detectado (${type}). Usando verifyOtp...`);
+        
+        const { error } = await supabase.auth.verifyOtp({
+            type: type as any,
+            token_hash: code,
         });
-        error = otpError;
+
+        if (!error) {
+            console.log("✅ Sucesso (verifyOtp)! Redirecionando...");
+            return NextResponse.redirect(`${origin}${next}`);
+        } else {
+            console.error("❌ Erro verifyOtp:", error.message);
+            return new NextResponse(`Erro de Link: ${error.message}`, { status: 400 });
+        }
     } 
-    // Se for login social ou outro, usamos a troca de código padrão
+    // Se não tiver type, assume que é OAuth (Google, Github, etc) ou Login normal
     else {
-        console.log("🌐 Processando fluxo OAuth/Code...");
-        const { error: codeError } = await supabase.auth.exchangeCodeForSession(code);
-        error = codeError;
-    }
-    
-    if (!error) {
-      console.log("✅ Sucesso! Redirecionando para:", next);
-      return NextResponse.redirect(`${origin}${next}`);
-    } else {
-      console.error("❌ Erro na autenticação:", error.message);
-      
-      // Mostra o erro na tela para facilitar o debug
-      return new NextResponse(
-        JSON.stringify({ 
-          status: "Erro de Autenticação", 
-          type: type || "oauth",
-          message: error.message 
-        }, null, 2), 
-        { status: 400 }
-      );
+        console.log("🌐 Fluxo OAuth/Padrão. Usando exchangeCodeForSession...");
+        
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        
+        if (!error) {
+            console.log("✅ Sucesso (exchangeCode)! Redirecionando...");
+            return NextResponse.redirect(`${origin}${next}`);
+        } else {
+            console.error("❌ Erro exchangeCode:", error.message);
+            // Retorna JSON para facilitar o seu diagnóstico na tela
+            return new NextResponse(JSON.stringify({ 
+                erro: "Falha na troca de código", 
+                detalhe: error.message, 
+                tipo_detectado: type || "nenhum (oauth assumido)" 
+            }, null, 2));
+        }
     }
   }
 
