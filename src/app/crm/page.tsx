@@ -336,20 +336,52 @@ export default function CRMPage() {
   
   // --- AÇÕES GERAIS ---
   const convertToClient = async (lead: Lead) => {
-    const { data: existing } = await supabase.from('clients').select('id').eq('email', lead.email).single();
-    if (existing) return;
+    // 1. Verificação segura: Evita erros se o email estiver vazio ou duplicado
+    if (lead.email && lead.email.trim() !== '') {
+        const { data: existing } = await supabase
+            .from('clients')
+            .select('id')
+            .eq('email', lead.email)
+            .maybeSingle(); // .maybeSingle() é mais seguro que .single()
 
-    await supabase.from('clients').insert({
+        if (existing) {
+             toast({ title: "Aviso", description: "Cliente já existe com este email.", variant: "destructive" });
+             return;
+        }
+    }
+
+    // 2. Criação do Cliente
+    // Ajustado para 'contract_start_date' (padrão do banco) para evitar erro de coluna
+    const { error } = await supabase.from('clients').insert({
       name: lead.title,
       email: lead.email,
       phone: lead.phone || '',
-      company: lead.company,
-      notes: `[Origem CRM] ${lead.notes}`,
-      contractStartDate: new Date().toISOString().split('T')[0],
+      company: lead.company || '',
+      notes: `[Origem CRM] ${lead.notes || ''}`,
+      contract_start_date: new Date().toISOString().split('T')[0], 
       status: 'active'
     });
     
-    toast({ title: "🎉 Cliente Fechado!", description: `${lead.title} virou cliente.`, className: "bg-green-600 text-white border-none" });
+    if (error) {
+        console.error("Erro ao criar cliente:", error);
+        // Fallback: Se der erro, tenta com o nome antigo da coluna (caso seu banco seja antigo)
+        if (error.message.includes('column "contract_start_date" of relation "clients" does not exist')) {
+            await supabase.from('clients').insert({
+                name: lead.title,
+                email: lead.email,
+                phone: lead.phone || '',
+                company: lead.company || '',
+                notes: `[Origem CRM] ${lead.notes || ''}`,
+                contractStartDate: new Date().toISOString().split('T')[0], 
+                status: 'active'
+            });
+             toast({ title: "🎉 Cliente Fechado!", description: "Salvo (formato antigo).", className: "bg-green-600 text-white" });
+        } else {
+             toast({ title: "Erro", description: "Falha ao criar cliente automático.", variant: "destructive" });
+        }
+    } else {
+        toast({ title: "🎉 Cliente Fechado!", description: `${lead.title} agora está na aba Clientes!`, className: "bg-green-600 text-white border-none" });
+    }
   };
 
   const onModalSubmit = async (data: LeadFormData) => {
