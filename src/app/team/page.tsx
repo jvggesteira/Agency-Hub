@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
-import { inviteUser } from '@/actions/invite-user';
+// REMOVIDO: import { inviteUser } from '@/actions/invite-user';
 import { getRolePresets, saveRolePreset, deleteRolePreset } from '@/actions/roles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,11 +11,10 @@ import { useToast } from '@/hooks/use-toast';
 import { usePermission } from '@/hooks/use-permission';
 import AccessDenied from '@/components/custom/access-denied';
 import { 
-    UserPlus, Mail, Shield, CheckCircle2, AlertCircle, 
-    Save, Trash2, LayoutTemplate 
+    UserPlus, Shield, CheckCircle2, Save, Trash2, LayoutTemplate 
 } from 'lucide-react';
 
-// --- CONFIGURAÇÃO DOS MÓDULOS (Lista Completa) ---
+// --- CONFIGURAÇÃO DOS MÓDULOS ---
 const MODULES = [
   { id: 'dashboard_main', label: 'Dashboard Principal' },
   { id: 'clients', label: 'Clientes' },
@@ -42,7 +41,6 @@ type PermissionState = {
   }
 };
 
-// Permissões vazias (zeradas)
 const EMPTY_PERMISSIONS: PermissionState = MODULES.reduce((acc, module) => ({
     ...acc,
     [module.id]: { view: false, create: false, edit: false, delete: false }
@@ -50,26 +48,10 @@ const EMPTY_PERMISSIONS: PermissionState = MODULES.reduce((acc, module) => ({
 
 export default function TeamPage() {
   const { can } = usePermission();
-
-  if (!can('team', 'view')) {
-    return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <main className="flex-1 overflow-y-auto p-6"><AccessDenied /></main>
-        </div>
-      </div>
-    );
-  }
-
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   
-  // Estado das Permissões
   const [permissions, setPermissions] = useState<PermissionState>(EMPTY_PERMISSIONS);
-
-  // Estado dos Cargos Salvos (Presets)
   const [savedRoles, setSavedRoles] = useState<any[]>([]);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [newRoleName, setNewRoleName] = useState("");
@@ -92,7 +74,7 @@ export default function TeamPage() {
         [type]: !prev[module][type]
       }
     }));
-    setSelectedRole(""); // Limpa seleção se mexer manualmente
+    setSelectedRole(""); 
   };
 
   const handleSelectPreset = (roleId: string) => {
@@ -103,7 +85,6 @@ export default function TeamPage() {
     }
     const role = savedRoles.find(r => r.id === roleId);
     if (role) {
-        // Mescla as permissões salvas com as vazias para garantir que novos módulos não quebrem
         setPermissions({ ...EMPTY_PERMISSIONS, ...role.permissions });
         toast({ title: "Modelo Carregado", description: `Permissões de "${role.name}" aplicadas.` });
     }
@@ -140,29 +121,60 @@ export default function TeamPage() {
       toast({ title: "Excluído", description: "Modelo de cargo removido." });
   }
 
+  // --- NOVA FUNÇÃO DE SUBMIT USANDO A API ---
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
     
     const formData = new FormData(event.currentTarget);
-    formData.append('permissions', JSON.stringify(permissions));
-    
-    const result = await inviteUser(formData);
-    
-    setIsLoading(false);
+    const email = formData.get('email') as string;
+    const fullName = formData.get('fullName') as string;
 
-    if (result.success) {
-      toast({ 
-          title: "Convite Enviado!", 
-          description: `Email enviado com sucesso.`, 
-          className: "bg-green-600 text-white border-none" 
-      });
-      (event.target as HTMLFormElement).reset();
-      setPermissions(EMPTY_PERMISSIONS);
-      setSelectedRole("");
-    } else {
-      toast({ title: "Erro", description: result.message, variant: "destructive" });
+    try {
+        const response = await fetch('/api/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email,
+                name: fullName,
+                role: 'collaborator',
+                permissions: permissions
+            })
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+             toast({ 
+                title: "Convite Enviado!", 
+                description: `Convite enviado para ${email}.`, 
+                className: "bg-green-600 text-white border-none" 
+            });
+            (event.target as HTMLFormElement).reset();
+            setPermissions(EMPTY_PERMISSIONS);
+            setSelectedRole("");
+        } else {
+            throw new Error(result.error || 'Erro desconhecido');
+        }
+
+    } catch (error: any) {
+        console.error("Erro ao convidar:", error);
+        toast({ title: "Erro no envio", description: error.message, variant: "destructive" });
+    } finally {
+        setIsLoading(false);
     }
+  }
+
+  if (!can('team', 'view')) {
+      return (
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+          <Sidebar />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header />
+            <main className="flex-1 overflow-y-auto p-6"><AccessDenied /></main>
+          </div>
+        </div>
+      );
   }
 
   return (
@@ -175,7 +187,7 @@ export default function TeamPage() {
           <div className="max-w-5xl mx-auto">
             <div className="mb-8">
               <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Gestão de Acessos</h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">Configure permissões ou use modelos pré-definidos.</p>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">Convide membros e configure permissões detalhadas.</p>
             </div>
 
             <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
@@ -216,7 +228,6 @@ export default function TeamPage() {
                             </select>
                         </div>
                         
-                        {/* Botão de Salvar Preset */}
                         <div className="flex items-end">
                             {!isSaveMode ? (
                                 <button 
@@ -246,7 +257,6 @@ export default function TeamPage() {
                         </div>
                     </div>
                     
-                    {/* Botão de excluir preset selecionado */}
                     {selectedRole && (
                         <div className="mt-2 flex justify-end">
                             <button 
@@ -260,7 +270,7 @@ export default function TeamPage() {
                     )}
                 </div>
 
-                {/* LISTA DE PERMISSÕES (CHECKBOXES) */}
+                {/* LISTA DE PERMISSÕES */}
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
                     <Shield className="h-5 w-5" /> Configuração de Acessos
                 </h2>
@@ -313,7 +323,7 @@ export default function TeamPage() {
                         disabled={isLoading} 
                         className="bg-slate-900 hover:bg-slate-800 text-white min-w-[200px] h-12 text-base dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all"
                     >
-                        {isLoading ? 'Processando...' : 'Enviar Convite'}
+                        {isLoading ? 'Enviando...' : 'Enviar Convite por Email'}
                     </Button>
                 </div>
             </form>
