@@ -7,12 +7,11 @@ import { KanbanColumn } from '@/components/custom/kanban-column';
 import { SortableTaskCard } from '@/components/custom/sortable-task-card';
 import { DndContext, DragEndEvent, closestCorners } from '@dnd-kit/core';
 import { 
-  Plus, UserPlus, X, DollarSign, Megaphone, Copy, Filter, Search, 
-  Calendar, Clock, CheckCircle2, AlertCircle, History, ListTodo, Layout, Trash2
+  Plus, UserPlus, X, ListTodo, History, Clock, Search, Copy
 } from 'lucide-react';
 import { usePermission } from '@/hooks/use-permission';
 import AccessDenied from '@/components/custom/access-denied';
-import { supabase } from '@/lib/supabase'; // Importe seu client do supabase
+import { supabase } from '@/lib/supabase';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -95,45 +94,24 @@ const SOURCES = [
 // --- FUNÇÕES DE FORMATAÇÃO ---
 const formatPhone = (value: string) => {
   if (!value) return "";
-  value = value.replace(/\D/g, ""); // Remove tudo que não é número
-  if (value.length > 11) value = value.slice(0, 11); // Limita a 11 dígitos
-  
-  // Máscara (XX) XXXXX-XXXX
-  if (value.length > 10) {
-    return value.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
-  } 
-  // Máscara (XX) XXXX-XXXX (Telefone fixo)
-  else if (value.length > 5) {
-    return value.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3");
-  } 
-  // Máscara parcial (XX) ...
-  else if (value.length > 2) {
-    return value.replace(/(\d{2})(\d{0,5})/, "($1) $2");
-  }
+  value = value.replace(/\D/g, "");
+  if (value.length > 11) value = value.slice(0, 11);
+  if (value.length > 10) return value.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
+  else if (value.length > 5) return value.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3");
+  else if (value.length > 2) return value.replace(/(\d{2})(\d{0,5})/, "($1) $2");
   return value;
 };
 
 const formatCurrencyInput = (value: string) => {
   if (!value) return "";
-  
-  // Remove tudo que não é dígito
   const numericValue = value.replace(/\D/g, "");
-  
-  // Converte para centavos e formata
   const amount = parseFloat(numericValue) / 100;
-  
   if (isNaN(amount)) return "";
-
-  return amount.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL'
-  });
+  return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-// Funções Auxiliares de cálculo
 const parseCurrency = (value?: string) => {
     if (!value) return 0;
-    // Remove o símbolo R$, espaços e pontos de milhar, troca vírgula decimal por ponto
     const cleanStr = value.replace(/[^\d,]/g, '').replace(',', '.');
     const num = parseFloat(cleanStr);
     return isNaN(num) ? 0 : num;
@@ -163,7 +141,6 @@ export default function CRMPage() {
   const [newTaskDate, setNewTaskDate] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
 
-  // Estados de Filtro
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
 
@@ -172,7 +149,6 @@ export default function CRMPage() {
     handleSubmit,
     reset,
     watch,
-    setValue, // Importante para aplicar máscara
     formState: { errors },
   } = useForm<LeadFormData>({
     resolver: zodResolver(leadSchema),
@@ -181,7 +157,6 @@ export default function CRMPage() {
 
   const selectedSource = watch('source');
 
-  // --- INICIALIZAÇÃO ---
   useEffect(() => {
     if (typeof window !== 'undefined') setWebhookUrl(`${window.location.origin}/api/leads`);
     initializeCRM();
@@ -189,19 +164,12 @@ export default function CRMPage() {
 
   const initializeCRM = async () => {
     setLoading(true);
-    
-    // Carregar Pipelines
     const { data: pipes } = await supabase.from('pipelines').select('*').order('created_at');
     
     if (pipes && pipes.length > 0) {
       setPipelines(pipes);
-      // Define o primeiro pipeline se nenhum estiver selecionado
-      if (!currentPipelineId) {
-          const initialId = pipes[0].id;
-          setCurrentPipelineId(initialId);
-      }
+      if (!currentPipelineId) setCurrentPipelineId(pipes[0].id);
     } else {
-      // Se não tiver pipeline, cria o padrão
       const { data: newPipe } = await supabase.from('pipelines').insert({ name: 'Funil Geral' }).select().single();
       if (newPipe) {
         setPipelines([newPipe]);
@@ -211,15 +179,10 @@ export default function CRMPage() {
     setLoading(false);
   };
 
-  // Fetch Leads sempre que o pipeline mudar
   useEffect(() => {
-      if (currentPipelineId) {
-          fetchLeads(currentPipelineId);
-      }
+      if (currentPipelineId) fetchLeads(currentPipelineId);
   }, [currentPipelineId]);
 
-
-  // --- FETCHS ---
   const fetchLeads = async (pipelineId: string) => {
     const { data } = await supabase
       .from('leads')
@@ -255,7 +218,6 @@ export default function CRMPage() {
     if (tsks) setTasks(tsks);
   };
 
-  // --- AÇÕES DO LEAD (Detalhes: Histórico e Tarefas) ---
   const handleAddNote = async () => {
     if (!selectedLead || !newNote.trim()) return;
     
@@ -304,44 +266,28 @@ export default function CRMPage() {
   };
 
   const createPipeline = async () => {
-      console.log("Iniciando criação de pipeline..."); // Debug no console (F12)
-      
       const name = prompt("Nome do novo Pipeline (ex: Inbound, Outbound):");
       if (!name || name.trim() === "") return;
 
       try {
-          const { data, error } = await supabase
-              .from('pipelines')
-              .insert({ name })
-              .select()
-              .single();
-          
-          if (error) {
-              console.error("Erro Supabase:", error);
-              alert(`Erro ao criar: ${error.message}`); // Pop-up de erro garantido
-              return;
-          }
+          const { data, error } = await supabase.from('pipelines').insert({ name }).select().single();
+          if (error) throw error;
 
           if (data) {
               setPipelines([...pipelines, data]);
               setCurrentPipelineId(data.id);
               fetchLeads(data.id); 
-              alert("Pipeline criado com sucesso!"); // Pop-up de sucesso
+              alert("Pipeline criado com sucesso!");
           }
       } catch (err: any) {
-          console.error("Erro Catch:", err);
           alert(`Erro inesperado: ${err.message}`);
       }
   };
   
-  // --- AÇÕES GERAIS ---
-const convertToClient = async (lead: Lead) => {
+  // --- AQUI ESTA A CORREÇÃO: CONVERSÃO SEM BLOQUEIO DE DUPLICIDADE ---
+  const convertToClient = async (lead: Lead) => {
     console.log("🔄 Convertendo lead em cliente (permitindo duplicidade):", lead.email);
 
-    // REMOVIDO: A verificação de email duplicado. 
-    // Agora o sistema vai tentar criar sempre.
-
-    // Tenta inserir o cliente
     const { error } = await supabase.from('clients').insert({
       name: lead.title,
       email: lead.email,
@@ -355,7 +301,6 @@ const convertToClient = async (lead: Lead) => {
     if (error) {
         console.error("Erro ao criar cliente:", error);
         
-        // Fallback: Se der erro de coluna inexistente, tenta o nome antigo (camelCase)
         if (error.message.includes('column "contract_start_date"')) {
             await supabase.from('clients').insert({
                 name: lead.title,
@@ -368,33 +313,10 @@ const convertToClient = async (lead: Lead) => {
             });
              toast({ title: "🎉 Cliente Fechado!", description: "Salvo (formato antigo).", className: "bg-green-600 text-white" });
         } else {
-             // Se o erro for outro (ex: violação de constraint no banco), avisamos
              toast({ title: "Erro", description: `Erro no banco: ${error.message}`, variant: "destructive" });
         }
     } else {
         toast({ title: "🎉 Cliente Fechado!", description: `${lead.title} foi cadastrado como novo cliente!`, className: "bg-green-600 text-white border-none" });
-    }
-  };
-    
-    if (error) {
-        console.error("Erro ao criar cliente:", error);
-        // Fallback: Se der erro, tenta com o nome antigo da coluna (caso seu banco seja antigo)
-        if (error.message.includes('column "contract_start_date" of relation "clients" does not exist')) {
-            await supabase.from('clients').insert({
-                name: lead.title,
-                email: lead.email,
-                phone: lead.phone || '',
-                company: lead.company || '',
-                notes: `[Origem CRM] ${lead.notes || ''}`,
-                contractStartDate: new Date().toISOString().split('T')[0], 
-                status: 'active'
-            });
-             toast({ title: "🎉 Cliente Fechado!", description: "Salvo (formato antigo).", className: "bg-green-600 text-white" });
-        } else {
-             toast({ title: "Erro", description: "Falha ao criar cliente automático.", variant: "destructive" });
-        }
-    } else {
-        toast({ title: "🎉 Cliente Fechado!", description: `${lead.title} agora está na aba Clientes!`, className: "bg-green-600 text-white border-none" });
     }
   };
 
@@ -483,7 +405,6 @@ const convertToClient = async (lead: Lead) => {
     }
   };
 
-  // --- CÁLCULO DE TOTAIS E FILTROS ---
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
         const matchSearch = 
@@ -498,7 +419,6 @@ const convertToClient = async (lead: Lead) => {
     });
   }, [leads, searchTerm, sourceFilter]);
 
-
   const leadsByStatus = PIPELINE_COLUMNS.reduce((acc, col) => {
     acc[col.id] = filteredLeads.filter(lead => lead.status === col.id);
     return acc;
@@ -511,8 +431,6 @@ const convertToClient = async (lead: Lead) => {
       return acc;
   }, {} as Record<LeadStatus, number>);
 
-
-  // --- VISUALIZAÇÃO E OUTROS ---
   const openDetailModal = (lead: Lead) => {
       setSelectedLead(lead);
       fetchLeadDetails(lead.id);
@@ -524,7 +442,6 @@ const convertToClient = async (lead: Lead) => {
       toast({ title: "Copiado!", description: "URL do Webhook copiada." });
   }
 
-  // Bloqueio de Permissão
   if (!can('crm', 'view')) {
       return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -544,13 +461,11 @@ const convertToClient = async (lead: Lead) => {
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
           
-          {/* HEADER DO CRM */}
           <div className="mb-6 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Pipeline de Vendas</h1>
               <p className="text-slate-600 dark:text-slate-400 mt-1">Gerencie seus leads de tráfego pago e conversões</p>
               
-              {/* Abas de Pipeline */}
               <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-2">
                 {pipelines.map(p => (
                     <button 
@@ -588,7 +503,6 @@ const convertToClient = async (lead: Lead) => {
             </div>
           </div>
 
-          {/* BARRA DE FILTROS */}
           <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 mb-6 flex flex-col md:flex-row gap-4 items-center transition-colors">
             <div className="flex-1 relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -613,7 +527,6 @@ const convertToClient = async (lead: Lead) => {
             </div>
           </div>
 
-          {/* KANBAN BOARD */}
           {loading ? (
             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 dark:border-white"></div></div>
           ) : (
@@ -622,7 +535,6 @@ const convertToClient = async (lead: Lead) => {
                     <div className="flex gap-4 min-w-[1600px] h-full">
                         {PIPELINE_COLUMNS.map(column => (
                             <div key={column.id} className="flex flex-col h-full w-80">
-                                {/* Header da Coluna com Total */}
                                 <div className="mb-3 flex flex-col gap-1">
                                     <div className="flex items-center justify-between">
                                         <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
@@ -633,7 +545,6 @@ const convertToClient = async (lead: Lead) => {
                                             {leadsByStatus[column.id]?.length || 0}
                                         </span>
                                     </div>
-                                    {/* TOTAL EM DINHEIRO */}
                                     <div className="text-sm font-bold text-slate-900 dark:text-white pl-5">
                                         {formatCurrencyDisplay(totalsByStatus[column.id])}
                                     </div>
@@ -666,7 +577,6 @@ const convertToClient = async (lead: Lead) => {
         </main>
       </div>
 
-      {/* MODAL DETALHES DO LEAD (TIMELINE & TAREFAS) */}
       {isDetailModalOpen && selectedLead && (
         <div className="fixed inset-0 bg-black/60 z-50 flex justify-end">
             <div className="w-full max-w-2xl bg-white dark:bg-slate-950 h-full shadow-2xl p-6 overflow-y-auto border-l border-slate-200 dark:border-slate-800 animate-in slide-in-from-right">
@@ -688,7 +598,6 @@ const convertToClient = async (lead: Lead) => {
 
                 <div className="grid grid-cols-1 gap-8">
                     
-                    {/* TAREFAS */}
                     <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                         <h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                             <ListTodo className="h-4 w-4" /> Tarefas & Lembretes
@@ -735,7 +644,6 @@ const convertToClient = async (lead: Lead) => {
                         </div>
                     </div>
 
-                    {/* HISTÓRICO / TIMELINE */}
                     <div>
                         <h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                             <History className="h-4 w-4" /> Histórico & Notas
@@ -773,7 +681,6 @@ const convertToClient = async (lead: Lead) => {
         </div>
       )}
 
-      {/* MODAL NOVO LEAD */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
            <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800">
