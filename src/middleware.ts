@@ -31,6 +31,7 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // Atualiza a sessão para manter o usuário logado
   await supabase.auth.getUser()
 
   return response
