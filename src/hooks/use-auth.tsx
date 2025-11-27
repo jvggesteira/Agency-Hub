@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 
-// Interfaces
 interface PermissionSet {
   view: boolean;
   create: boolean;
@@ -17,8 +16,8 @@ interface UserProfile {
   id: string;
   email: string;
   name: string;
-  first_name: string; // Adicionado para compatibilidade visual
-  last_name: string;  // Adicionado para compatibilidade visual
+  first_name: string;
+  last_name: string;
   role: string;
   permissions: Record<string, PermissionSet>;
 }
@@ -48,7 +47,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .eq('id', supabaseUser.id)
         .maybeSingle();
 
-      // Lógica para separar Nome e Sobrenome (Corrige o "Undefined")
       const fullName = profile?.name || supabaseUser.email?.split('@')[0] || 'Usuário';
       const nameParts = fullName.split(' ');
       const firstName = nameParts[0];
@@ -66,7 +64,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
       }
 
-      // Fallback para usuário sem perfil (Evita crash)
       return {
         id: supabaseUser.id,
         email: supabaseUser.email || '',
@@ -100,7 +97,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
+    // 1. Inicia a verificação padrão
     refreshUser();
+
+    // 2. TRAVA DE SEGURANÇA (O Pulo do Gato 🐈)
+    // Se em 2 segundos o refreshUser não terminar, a gente força o fim do loading.
+    // Isso evita a tela branca eterna.
+    const safetyTimer = setTimeout(() => {
+        setIsLoading((prev) => {
+            if (prev) {
+                console.warn("⚠️ Carregamento demorou demais. Forçando liberação da tela.");
+                return false;
+            }
+            return prev;
+        });
+    }, 2000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
@@ -112,7 +123,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+        subscription.unsubscribe();
+        clearTimeout(safetyTimer);
+    };
   }, []);
 
   const signOut = async () => {
