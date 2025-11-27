@@ -4,24 +4,26 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
-import { redirect } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Use useRouter ao invés de redirect
 import { useEffect, useState } from 'react';
 
 export default function LoginPage() {
   const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
   const [origin, setOrigin] = useState('');
 
   useEffect(() => {
-    // Pega a URL base do navegador apenas no cliente para evitar erro de hidratação
     setOrigin(window.location.origin);
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      redirect('/dashboard');
+    // Redirecionamento seguro no cliente
+    if (isAuthenticated && !isLoading) {
+      router.replace('/dashboard');
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isLoading, router]);
 
+  // Se estiver carregando ou já logado, mostra loading para evitar piscar a tela
   if (isLoading || isAuthenticated) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
@@ -30,14 +32,14 @@ export default function LoginPage() {
     );
   }
 
-  // Define para onde o link do e-mail deve mandar
-  // O callback vai receber isso e jogar para /update-password
   const redirectUrl = origin ? `${origin}/auth/callback?next=/update-password` : undefined;
 
   return (
     <div className="flex h-screen items-center justify-center bg-slate-50 p-4">
       <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-slate-200">
         <h1 className="text-2xl font-bold text-center text-slate-900 mb-6">Bem-vindo ao AgencyHub</h1>
+        
+        {/* Componente de Auth Seguro */}
         <Auth
           supabaseClient={supabase}
           appearance={{
@@ -56,10 +58,10 @@ export default function LoginPage() {
             },
           }}
           theme="light"
-          providers={[]}
-          // AQUI ESTÁ A CORREÇÃO:
+          providers={[]} // Desabilita OAuth para focar no email
           redirectTo={redirectUrl}
           view="sign_in"
+          showLinks={true}
         />
       </div>
     </div>

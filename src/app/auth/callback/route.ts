@@ -5,7 +5,7 @@ import { cookies } from 'next/headers'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  // Se vier um 'next' na URL, usamos ele. Se não, vai pro dashboard.
+  // Pega o destino ou manda pro dashboard
   const next = searchParams.get('next') ?? '/dashboard'
 
   if (code) {
@@ -24,24 +24,21 @@ export async function GET(request: Request) {
                 cookieStore.set(name, value, options)
               )
             } catch {
-              // The `setAll` method was called from a Server Component.
-              // This can be ignored if you have middleware refreshing
-              // user sessions.
+              // Ignora erro de server component
             }
           },
         },
       }
     )
     
-    // Troca o código pela sessão
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      // Redireciona para o destino correto (ex: /update-password)
+      // Redireciona limpo para a próxima página
       return NextResponse.redirect(`${origin}${next}`)
     }
   }
 
-  // Erro? Volta pro login
-  return NextResponse.redirect(`${origin}/login?error=auth_code_error`)
+  // Se der erro, manda pro login sem crashar
+  return NextResponse.redirect(`${origin}/login?error=invalid_token`)
 }
