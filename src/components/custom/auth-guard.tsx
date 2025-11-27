@@ -1,55 +1,64 @@
-// src/components/custom/auth-guard.tsx
-
 'use client';
 
 import { useAuth } from '@/hooks/use-auth';
-// Mudança: Importamos useRouter em vez de redirect
-import { usePathname, useRouter } from 'next/navigation'; 
-import React, { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import React, { useEffect, useState } from 'react';
 
-// Rotas públicas que não exigem autenticação
-const PUBLIC_ROUTES = ['/login', '/signup', '/forgot-password'];
+// 1. LISTA ATUALIZADA (O Ponto Chave)
+const PUBLIC_ROUTES = [
+  '/login', 
+  '/signup', 
+  '/forgot-password', 
+  '/verify',           // Necessário para validar o token
+  '/update-password',  // Necessário para definir a senha
+  '/auth/callback'     // Necessário para processos internos
+];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  // Pega o estado do hook
   const { isAuthenticated, isLoading } = useAuth(); 
   const pathname = usePathname();
-  // Mudança: Inicializa o useRouter
   const router = useRouter(); 
-  const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
+  
+  // Estado para evitar piscar conteúdo protegido
+  const [isChecking, setIsChecking] = useState(true);
 
-  // Lógica de redirecionamento (Executa sempre que o estado de autenticação mudar)
   useEffect(() => {
-    // 1. REGRA CRÍTICA: Se o estado ainda está carregando, SAIA.
+    // 1. Se o Supabase ainda está carregando, não faz nada
     if (isLoading) return; 
 
-    // 2. Cenário A: Usuário NÃO logado tentando acessar Rota Privada
-    if (!isAuthenticated && !isPublicRoute) {
-      // Redirecionamento suave que não força o re-render
-      router.push('/login'); 
-      return;
-    }
+    // Verifica se a rota atual começa com alguma das rotas públicas
+    const isPublicRoute = PUBLIC_ROUTES.some(route => pathname?.startsWith(route));
 
-    // 3. Cenário B: Usuário logado tentando acessar Rota Pública (como /login)
-    if (isAuthenticated && isPublicRoute) {
-      // Redirecionamento suave que não força o re-render
-      router.push('/dashboard');
-      return;
+    if (isPublicRoute) {
+        // Se é pública, libera
+        setIsChecking(false);
+
+        // Opcional: Se já está logado e tenta ir pro login, manda pro dashboard.
+        // MAS: Não redireciona se estiver no update-password ou verify
+        if (isAuthenticated && (pathname === '/login' || pathname === '/signup')) {
+            router.replace('/dashboard');
+        }
+    } else {
+        // Se é rota privada
+        if (!isAuthenticated) {
+            // Não logado -> Login
+            router.replace('/login');
+        } else {
+            // Logado -> Libera
+            setIsChecking(false);
+        }
     }
     
-  }, [isAuthenticated, isLoading, pathname, isPublicRoute, router]);
+  }, [isAuthenticated, isLoading, pathname, router]);
 
-  // 4. O QUE MOSTRAR ENQUANTO CARREGA
-  // Se o estado ainda está sendo resolvido (isLoading é true), mostre o loader.
-  if (isLoading) {
+  // Enquanto verifica, mostra o loading
+  if (isLoading || isChecking) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 dark:border-white"></div>
       </div>
     );
   }
 
-  // 5. Se passou por todas as verificações, mostre o conteúdo.
-  // Se o redirecionamento foi acionado, o router.push já está atuando, então renderizamos children.
   return <>{children}</>;
 }
