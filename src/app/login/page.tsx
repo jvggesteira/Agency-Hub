@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
 
 export default function LoginPage() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -16,22 +17,37 @@ export default function LoginPage() {
     setOrigin(window.location.origin);
   }, []);
 
-  useEffect(() => {
-    // Redirecionamento seguro no cliente
-    if (isAuthenticated && !isLoading) {
-      // MUDANÇA AQUI: Força o navegador a carregar o dashboard do zero
-      // Isso resolve o loop infinito de loading
+  // REMOVIDO: O useEffect que fazia o redirecionamento automático e causava o loop.
+  
+  const handleGoToDashboard = () => {
+      // Força recarregar para sincronizar cookies se necessário
       window.location.href = '/dashboard';
-    }
-  }, [isAuthenticated, isLoading]);
+  }
 
-  // Se estiver carregando ou já logado, mostra loading para evitar piscar a tela
-  if (isLoading || isAuthenticated) {
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
+  }
+
+  // Se já estiver logado, mostra opção manual em vez de redirecionar sozinho
+  if (isAuthenticated) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-slate-50 flex-col gap-4">
+            <div className="text-center space-y-2">
+                <h1 className="text-2xl font-bold text-slate-900">Você já está conectado!</h1>
+                <p className="text-slate-600">O sistema identificou sua sessão.</p>
+            </div>
+            <Button onClick={handleGoToDashboard} className="bg-slate-900 text-white px-8">
+                Ir para o Dashboard
+            </Button>
+            <Button variant="outline" onClick={() => supabase.auth.signOut().then(() => window.location.reload())}>
+                Sair e entrar com outra conta
+            </Button>
+        </div>
+      )
   }
 
   const redirectUrl = origin ? `${origin}/auth/callback?next=/update-password` : undefined;
@@ -41,7 +57,6 @@ export default function LoginPage() {
       <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-slate-200">
         <h1 className="text-2xl font-bold text-center text-slate-900 mb-6">Bem-vindo ao AgencyHub</h1>
         
-        {/* Componente de Auth Seguro */}
         <Auth
           supabaseClient={supabase}
           appearance={{

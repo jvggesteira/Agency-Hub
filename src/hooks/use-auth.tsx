@@ -51,30 +51,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      if (profile) {
-        return {
+      // Retorna sempre um objeto válido, mesmo se o banco falhar (Fallback)
+      return {
           id: supabaseUser.id,
           email: supabaseUser.email || '',
           name: fullName,
           first_name: firstName,
           last_name: lastName,
-          role: profile.role || 'collaborator',
-          permissions: profile.permissions || {},
-        };
-      }
-
-      return {
-        id: supabaseUser.id,
-        email: supabaseUser.email || '',
-        name: fullName,
-        first_name: firstName,
-        last_name: lastName,
-        role: 'collaborator',
-        permissions: {},
+          role: profile?.role || 'collaborator',
+          permissions: profile?.permissions || {},
       };
 
     } catch (error) {
-      console.error("Erro no AuthProvider:", error);
+      console.error("Auth Error:", error);
       return null;
     }
   };
@@ -91,46 +80,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (e) {
       setUser(null);
     } finally {
-      // Garante que o loading pare, independente do resultado
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    let mounted = true;
-
-    const initAuth = async () => {
-        await refreshUser();
-    };
-
-    initAuth();
+    refreshUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-      
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (session?.user) {
-          const profile = await fetchUserProfile(session.user);
-          if (mounted) setUser(profile);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        if (mounted) setUser(null);
-        // Não redirecionamos aqui para evitar conflito com middleware
+      // Atualiza o estado local sempre que o Supabase avisar que mudou
+      if (session?.user) {
+        const profile = await fetchUserProfile(session.user);
+        setUser(profile);
+      } else {
+        setUser(null);
       }
-      
-      if (mounted) setIsLoading(false);
+      setIsLoading(false);
     });
 
-    return () => {
-        mounted = false;
-        subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    window.location.href = '/login'; // Força recarregamento limpo ao sair
+    window.location.href = '/login'; 
   };
 
   return (
