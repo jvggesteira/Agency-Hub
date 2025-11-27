@@ -3,8 +3,9 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { toast } from '@/hooks/use-toast';
 
-// Definição segura das permissões
+// Interfaces
 interface PermissionSet {
   view: boolean;
   create: boolean;
@@ -16,6 +17,8 @@ interface UserProfile {
   id: string;
   email: string;
   name: string;
+  first_name: string; // Adicionado para compatibilidade visual
+  last_name: string;  // Adicionado para compatibilidade visual
   role: string;
   permissions: Record<string, PermissionSet>;
 }
@@ -35,37 +38,43 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Função para buscar/criar perfil
   const fetchUserProfile = async (supabaseUser: any): Promise<UserProfile | null> => {
     if (!supabaseUser) return null;
 
     try {
-      // 1. Tenta buscar o perfil
-      const { data: profile, error } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', supabaseUser.id)
-        .maybeSingle(); // Usa maybeSingle para não dar erro 406 se não existir
+        .maybeSingle();
 
-      // 2. Se o perfil existe, retorna ele
+      // Lógica para separar Nome e Sobrenome (Corrige o "Undefined")
+      const fullName = profile?.name || supabaseUser.email?.split('@')[0] || 'Usuário';
+      const nameParts = fullName.split(' ');
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(' ') || '';
+
       if (profile) {
         return {
           id: supabaseUser.id,
           email: supabaseUser.email || '',
-          name: profile.name || supabaseUser.email?.split('@')[0] || 'Usuário',
+          name: fullName,
+          first_name: firstName,
+          last_name: lastName,
           role: profile.role || 'collaborator',
           permissions: profile.permissions || {},
         };
       }
 
-      // 3. Se não existe (Caso Raro/Novo), retorna um objeto temporário seguro
-      // Isso evita o "Acesso Negado" por falta de dados
+      // Fallback para usuário sem perfil (Evita crash)
       return {
         id: supabaseUser.id,
         email: supabaseUser.email || '',
-        name: supabaseUser.email?.split('@')[0] || 'Novo Usuário',
-        role: 'collaborator', // Cargo padrão seguro
-        permissions: {}, // Sem permissões por padrão
+        name: fullName,
+        first_name: firstName,
+        last_name: lastName,
+        role: 'collaborator',
+        permissions: {},
       };
 
     } catch (error) {
