@@ -4,7 +4,7 @@ import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
-import { useRouter } from 'next/navigation'; // Use useRouter ao invés de redirect
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 export default function LoginPage() {
@@ -19,9 +19,11 @@ export default function LoginPage() {
   useEffect(() => {
     // Redirecionamento seguro no cliente
     if (isAuthenticated && !isLoading) {
-      router.replace('/dashboard');
+      // MUDANÇA AQUI: Força o navegador a carregar o dashboard do zero
+      // Isso resolve o loop infinito de loading
+      window.location.href = '/dashboard';
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading]);
 
   // Se estiver carregando ou já logado, mostra loading para evitar piscar a tela
   if (isLoading || isAuthenticated) {
@@ -58,7 +60,7 @@ export default function LoginPage() {
             },
           }}
           theme="light"
-          providers={[]} // Desabilita OAuth para focar no email
+          providers={[]} 
           redirectTo={redirectUrl}
           view="sign_in"
           showLinks={true}

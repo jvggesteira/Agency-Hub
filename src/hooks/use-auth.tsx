@@ -3,7 +3,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { toast } from '@/hooks/use-toast';
 
 interface PermissionSet {
   view: boolean;
@@ -92,47 +91,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (e) {
       setUser(null);
     } finally {
+      // Garante que o loading pare, independente do resultado
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    // 1. Inicia a verificação padrão
-    refreshUser();
+    let mounted = true;
 
-    // 2. TRAVA DE SEGURANÇA (O Pulo do Gato 🐈)
-    // Se em 2 segundos o refreshUser não terminar, a gente força o fim do loading.
-    // Isso evita a tela branca eterna.
-    const safetyTimer = setTimeout(() => {
-        setIsLoading((prev) => {
-            if (prev) {
-                console.warn("⚠️ Carregamento demorou demais. Forçando liberação da tela.");
-                return false;
-            }
-            return prev;
-        });
-    }, 2000);
+    const initAuth = async () => {
+        await refreshUser();
+    };
+
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const profile = await fetchUserProfile(session.user);
-        setUser(profile);
-      } else {
-        setUser(null);
+      if (!mounted) return;
+      
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (session?.user) {
+          const profile = await fetchUserProfile(session.user);
+          if (mounted) setUser(profile);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        if (mounted) setUser(null);
+        // Não redirecionamos aqui para evitar conflito com middleware
       }
-      setIsLoading(false);
+      
+      if (mounted) setIsLoading(false);
     });
 
     return () => {
+        mounted = false;
         subscription.unsubscribe();
-        clearTimeout(safetyTimer);
     };
   }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    router.push('/login');
+    window.location.href = '/login'; // Força recarregamento limpo ao sair
   };
 
   return (

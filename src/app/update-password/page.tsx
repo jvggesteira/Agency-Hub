@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -11,7 +10,6 @@ import { Lock } from 'lucide-react';
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const { toast } = useToast();
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
@@ -25,24 +23,24 @@ export default function UpdatePasswordPage() {
     }
 
     try {
-      // Atualiza a senha do usuário logado (o Magic Link já logou ele)
+      // 1. Atualiza a senha
       const { error } = await supabase.auth.updateUser({ password: password });
 
       if (error) throw error;
 
       toast({ 
-        title: "Senha Definida!", 
-        description: "Sua conta foi ativada com sucesso.", 
+        title: "Sucesso!", 
+        description: "Senha definida. Entrando...", 
         className: "bg-green-600 text-white border-none" 
       });
       
-      // Manda para o Dashboard
-      router.push('/'); 
+      // 2. A SOLUÇÃO NUCLEAR: Força o navegador a ir para o dashboard do zero
+      // Isso garante que os cookies sejam lidos corretamente
+      window.location.href = '/dashboard';
 
     } catch (error: any) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
-    } finally {
-      setLoading(false);
+      setLoading(false); // Só para o loading se der erro
     }
   };
 
@@ -55,7 +53,7 @@ export default function UpdatePasswordPage() {
           </div>
           <h2 className="text-3xl font-bold text-slate-900 dark:text-white">Definir Senha</h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            Bem-vindo ao time! Defina sua senha para acessar a plataforma.
+            Defina sua senha para acessar a plataforma.
           </p>
         </div>
 
@@ -75,7 +73,7 @@ export default function UpdatePasswordPage() {
           </div>
 
           <Button type="submit" disabled={loading} className="w-full bg-slate-900 dark:bg-white dark:text-slate-900">
-            {loading ? 'Salvando...' : 'Ativar Conta e Entrar'}
+            {loading ? 'Salvando...' : 'Salvar e Entrar'}
           </Button>
         </form>
       </div>
