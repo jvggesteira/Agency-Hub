@@ -6,13 +6,12 @@ import { supabase } from '@/lib/supabase';
 import { type EmailOtpType } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
 
-// Componente interno que lê os parâmetros
 function VerifyContent() {
-  const [status, setStatus] = useState('Verificando link de acesso...');
+  const [status, setStatus] = useState('Validando token de segurança...');
   const [errorDetails, setErrorDetails] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   
-  const router = useRouter();
+  // Pega o destino (se for invite/recovery, vai pra update-password)
   const searchParams = useSearchParams();
   const next = searchParams.get('next') ?? '/dashboard';
 
@@ -22,11 +21,11 @@ function VerifyContent() {
       const type = searchParams.get('type') as EmailOtpType | null;
 
       if (!token_hash || !type) {
-        setStatus('Aguardando verificação...'); 
+        // Se não tiver token, não faz nada (espera o usuário ou mostra erro)
         return;
       }
 
-      console.log("🔐 Iniciando verificação...");
+      console.log("🔐 Tentando validar token...");
 
       const { error } = await supabase.auth.verifyOtp({
         token_hash,
@@ -34,14 +33,17 @@ function VerifyContent() {
       });
 
       if (!error) {
-        console.log("✅ Token válido!");
-        setStatus('Sucesso! Entrando...');
+        console.log("✅ Token válido! Redirecionando...");
+        setStatus('Acesso liberado! Entrando...');
         setIsSuccess(true);
         
-        // Redirecionamento forçado para garantir limpeza de estado
+        // 🚨 O SEGREDO ESTÁ AQUI: 
+        // Usamos window.location.href em vez de router.push
+        // Isso força o navegador a ler o novo cookie de sessão
         setTimeout(() => {
             window.location.href = next;
-        }, 800);
+        }, 1000);
+        
       } else {
         console.error('❌ Erro:', error);
         setStatus('Link inválido ou expirado.');
@@ -49,7 +51,7 @@ function VerifyContent() {
       }
     };
 
-    // Pequeno delay para garantir que o router esteja pronto
+    // Pequeno delay inicial para garantir hidratação
     const timer = setTimeout(() => {
         verifyToken();
     }, 500);
@@ -61,8 +63,8 @@ function VerifyContent() {
       return (
         <div className="space-y-4">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-500 mx-auto"></div>
-            <p className="text-green-400 font-medium">Autenticado com sucesso.</p>
-            <p className="text-slate-500 text-sm">Redirecionando...</p>
+            <p className="text-green-400 font-medium">Sucesso!</p>
+            <p className="text-slate-500 text-sm">Carregando seus dados...</p>
         </div>
       );
   }
@@ -70,7 +72,7 @@ function VerifyContent() {
   if (errorDetails) {
       return (
           <div className="mt-4 p-4 bg-red-950/50 border border-red-900 rounded-lg text-red-200 text-sm">
-            <p className="font-bold mb-2">Falha na Verificação:</p>
+            <p className="font-bold mb-2">Erro na validação:</p>
             {errorDetails}
             <div className="mt-6">
                 <Button onClick={() => window.location.href = '/login'} variant="outline" className="text-white border-slate-700 hover:bg-slate-800">
@@ -89,12 +91,11 @@ function VerifyContent() {
   );
 }
 
-// Componente Principal com Suspense (Obrigatório no Next 15)
 export default function VerifyPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 text-white p-4">
       <div className="w-full max-w-md p-8 bg-slate-900 rounded-xl border border-slate-800 text-center shadow-2xl">
-        <Suspense fallback={<div className="text-center text-slate-400">Carregando verificação...</div>}>
+        <Suspense fallback={<div className="text-slate-400">Carregando...</div>}>
             <VerifyContent />
         </Suspense>
       </div>

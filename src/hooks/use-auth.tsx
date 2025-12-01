@@ -51,15 +51,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Retorna sempre um objeto válido, mesmo se o banco falhar (Fallback)
-      return {
+      if (profile) {
+        return {
           id: supabaseUser.id,
           email: supabaseUser.email || '',
           name: fullName,
           first_name: firstName,
           last_name: lastName,
-          role: profile?.role || 'collaborator',
-          permissions: profile?.permissions || {},
+          role: profile.role || 'collaborator',
+          permissions: profile.permissions || {},
+        };
+      }
+
+      return {
+        id: supabaseUser.id,
+        email: supabaseUser.email || '',
+        name: fullName,
+        first_name: firstName,
+        last_name: lastName,
+        role: 'collaborator',
+        permissions: {},
       };
 
     } catch (error) {
@@ -88,11 +99,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     refreshUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Atualiza o estado local sempre que o Supabase avisar que mudou
-      if (session?.user) {
-        const profile = await fetchUserProfile(session.user);
-        setUser(profile);
-      } else {
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (session?.user) {
+          const profile = await fetchUserProfile(session.user);
+          setUser(profile);
+        }
+      } else if (event === 'SIGNED_OUT') {
         setUser(null);
       }
       setIsLoading(false);
@@ -101,10 +113,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
+  // --- FUNÇÃO DE LOGOUT CORRIGIDA ---
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    window.location.href = '/login'; 
+    setIsLoading(true);
+    try {
+        await supabase.auth.signOut();
+        setUser(null);
+        // Força limpeza total e redirecionamento
+        window.location.href = '/login'; 
+    } catch (error) {
+        console.error("Erro ao sair:", error);
+        window.location.href = '/login';
+    }
   };
 
   return (
