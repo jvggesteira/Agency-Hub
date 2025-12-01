@@ -1,14 +1,12 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { type EmailOtpType } from '@supabase/supabase-js';
 
 function VerifyContent() {
   const [status, setStatus] = useState('Validando token...');
-  const [errorDetails, setErrorDetails] = useState('');
-  
   const searchParams = useSearchParams();
   const next = searchParams.get('next') ?? '/dashboard';
 
@@ -19,58 +17,31 @@ function VerifyContent() {
 
       if (!token_hash || !type) return;
 
-      console.log("🔐 Validando token...");
-
-      const { data, error } = await supabase.auth.verifyOtp({
-        token_hash,
-        type,
-      });
+      const { data, error } = await supabase.auth.verifyOtp({ token_hash, type });
 
       if (!error && data.session) {
-        setStatus('Sucesso! Transferindo sessão...');
+        setStatus('Sucesso! Redirecionando...');
         
-        // --- O PULO DO GATO ---
-        // Pegamos os tokens da sessão gerada
+        // PULO DO GATO: Passa a sessão na URL
         const accessToken = data.session.access_token;
         const refreshToken = data.session.refresh_token;
-
-        // Montamos a URL de destino INCLUINDO os tokens
-        // Isso garante que a próxima página receba a sessão mesmo se o cookie falhar
+        
+        // Redireciona com os tokens
         const targetUrl = `${next}?access_token=${accessToken}&refresh_token=${refreshToken}`;
-
-        // Redirecionamento forçado
         window.location.href = targetUrl;
         
       } else {
-        console.error('❌ Erro:', error);
-        setStatus('Falha na validação.');
-        setErrorDetails(error?.message || 'Erro desconhecido');
+        setStatus('Erro na validação.');
+        console.error(error);
       }
     };
 
-    // Delay mínimo para garantir carregamento
-    setTimeout(verifyToken, 500);
-
+    verifyToken();
   }, [searchParams, next]);
-
-  if (errorDetails) {
-      return (
-          <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-            <div className="p-4 bg-red-900/50 border border-red-800 rounded">
-                <p className="font-bold">Erro:</p> {errorDetails}
-                <br/>
-                <a href="/login" className="underline mt-2 block">Voltar ao Login</a>
-            </div>
-          </div>
-      );
-  }
 
   return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-        <div className="text-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p>{status}</p>
-        </div>
+        <p>{status}</p>
       </div>
   );
 }

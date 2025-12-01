@@ -36,8 +36,6 @@ export default function RootLayout({
         suppressHydrationWarning // Adicionando warning suppression ao body
       >
         {/* Usando tag script nativa para evitar conflito de hidratação com o Next.js Script component */}
-        <script src="/lasy-bridge.js" />
-<script src="/easy-bridge.js" />
 
 {/* 🔴 NOVO: ThemeProvider deve ser o mais externo aqui */}
 <ThemeProvider> 
