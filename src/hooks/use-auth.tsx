@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, createContext, useContext } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase'; // Agora este import vai funcionar
 import { useRouter } from 'next/navigation';
+import { AuthError, Session, User } from '@supabase/supabase-js';
 
+// Definição das Permissões
 interface PermissionSet {
   view: boolean;
   create: boolean;
@@ -36,7 +38,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  const fetchUserProfile = async (supabaseUser: any): Promise<UserProfile | null> => {
+  const fetchUserProfile = async (supabaseUser: User): Promise<UserProfile | null> => {
     if (!supabaseUser) return null;
 
     try {
@@ -74,7 +76,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       };
 
     } catch (error) {
-      console.error("Auth Error:", error);
+      console.error("Erro no AuthProvider:", error);
       return null;
     }
   };
@@ -98,13 +100,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     refreshUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (session?.user) {
-          const profile = await fetchUserProfile(session.user);
-          setUser(profile);
-        }
-      } else if (event === 'SIGNED_OUT') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const profile = await fetchUserProfile(session.user);
+        setUser(profile);
+      } else {
         setUser(null);
       }
       setIsLoading(false);
@@ -113,18 +113,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- FUNÇÃO DE LOGOUT CORRIGIDA ---
   const signOut = async () => {
-    setIsLoading(true);
-    try {
-        await supabase.auth.signOut();
-        setUser(null);
-        // Força limpeza total e redirecionamento
-        window.location.href = '/login'; 
-    } catch (error) {
-        console.error("Erro ao sair:", error);
-        window.location.href = '/login';
-    }
+    await supabase.auth.signOut();
+    setUser(null);
+    window.location.href = '/login'; 
   };
 
   return (

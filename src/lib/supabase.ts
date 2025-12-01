@@ -1,4 +1,6 @@
-import { supabase } from '@/integrations/supabase/client';
+import { createBrowserClient } from '@supabase/ssr';
 
-// Export the client directly from the integration file
-export { supabase };
+export const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
