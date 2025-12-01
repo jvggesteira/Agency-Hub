@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,21 @@ export default function UpdatePasswordPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+
+  // Verifica se a sessão existe ao carregar a página
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        // Se não tiver sessão, tenta recuperar do URL (caso o verify tenha passado o token na url)
+        // ou manda pro login se realmente perdeu tudo.
+        console.warn("Sessão não encontrada no início do update-password");
+      } else {
+        console.log("Sessão ativa confirmada:", session.user.email);
+      }
+    };
+    checkSession();
+  }, []);
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,7 +38,7 @@ export default function UpdatePasswordPage() {
     }
 
     try {
-      // 1. Atualiza a senha
+      // 1. Tenta atualizar a senha
       const { error } = await supabase.auth.updateUser({ password: password });
 
       if (error) throw error;
@@ -34,13 +49,20 @@ export default function UpdatePasswordPage() {
         className: "bg-green-600 text-white border-none" 
       });
       
-      // 2. A SOLUÇÃO NUCLEAR: Força o navegador a ir para o dashboard do zero
-      // Isso garante que os cookies sejam lidos corretamente
+      // 2. Força login e redirecionamento
       window.location.href = '/dashboard';
 
     } catch (error: any) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-      setLoading(false); // Só para o loading se der erro
+      console.error("Erro no update:", error);
+      
+      // SE DER ERRO DE SESSÃO: Tenta um "Plan B" (Login com token implícito se existir)
+      if (error.message.includes("session missing") || error.message.includes("Auth session missing")) {
+         toast({ title: "Erro de Sessão", description: "Sua sessão expirou. Tente clicar no link do e-mail novamente.", variant: "destructive" });
+      } else {
+         toast({ title: "Erro", description: error.message, variant: "destructive" });
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
