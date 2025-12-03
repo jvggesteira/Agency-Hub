@@ -3,7 +3,7 @@
 import { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 // Correção do import para garantir compatibilidade
-import { supabase } from '../lib/supabase'; 
+import { supabase } from '../../lib/supabase'; 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
