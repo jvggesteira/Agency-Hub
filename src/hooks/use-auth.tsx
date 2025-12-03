@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, createContext, useContext } from 'react';
-import { supabase } from '@/lib/supabase'; // Agora este import vai funcionar
-import { useRouter } from 'next/navigation';
-import { AuthError, Session, User } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase'; // Ajustei para @/lib se for o padrão, ou mantenha ../lib
+import { useRouter, usePathname } from 'next/navigation';
+import { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
-// Definição das Permissões
 interface PermissionSet {
   view: boolean;
   create: boolean;
@@ -36,47 +35,41 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
   const router = useRouter();
+  const pathname = usePathname(); // MUDANÇA: Saber onde estamos
 
+  // Função auxiliar para buscar/formatar perfil
   const fetchUserProfile = async (supabaseUser: User): Promise<UserProfile | null> => {
     if (!supabaseUser) return null;
 
     try {
-      const { data: profile } = await supabase
+      // Tenta buscar o perfil
+      const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', supabaseUser.id)
         .maybeSingle();
 
+      // Formatação de nome robusta
       const fullName = profile?.name || supabaseUser.email?.split('@')[0] || 'Usuário';
       const nameParts = fullName.split(' ');
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      if (profile) {
-        return {
-          id: supabaseUser.id,
-          email: supabaseUser.email || '',
-          name: fullName,
-          first_name: firstName,
-          last_name: lastName,
-          role: profile.role || 'collaborator',
-          permissions: profile.permissions || {},
-        };
-      }
-
+      // Retorna perfil do banco ou objeto padrão se falhar
       return {
         id: supabaseUser.id,
         email: supabaseUser.email || '',
         name: fullName,
         first_name: firstName,
         last_name: lastName,
-        role: 'collaborator',
-        permissions: {},
+        role: profile?.role || 'collaborator',
+        permissions: profile?.permissions || {},
       };
 
     } catch (error) {
-      console.error("Erro no AuthProvider:", error);
+      console.error("Erro silencioso no AuthProvider (Fetch Profile):", error);
       return null;
     }
   };
@@ -84,6 +77,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const refreshUser = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      
+      // BLINDAGEM: Se estamos na página de update-password, evitamos sobrescrever estado
+      if (pathname?.includes('/auth/update-password')) {
+         setIsLoading(false);
+         return;
+      }
+
       if (session?.user) {
         const profile = await fetchUserProfile(session.user);
         setUser(profile);
@@ -100,7 +100,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     refreshUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // Timer de segurança para destravar a tela se o Supabase demorar
+    const safetyTimer = setTimeout(() => {
+        setIsLoading((prev) => {
+            if (prev) return false;
+            return prev;
+        });
+    }, 4000); // Aumentei para 4s para dar tempo em conexões lentas
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
+      
+      // BLINDAGEM CRÍTICA:
+      // Se for recuperação de senha, NÃO force atualização de estado global agora.
+      // Deixe a página update-password lidar com a sessão.
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsLoading(false);
+        return; 
+      }
+
+      // Se for apenas atualização de token, muitas vezes não precisamos buscar o perfil de novo
+      if (event === 'TOKEN_REFRESHED' && user) {
+        return; 
+      }
+
       if (session?.user) {
         const profile = await fetchUserProfile(session.user);
         setUser(profile);
@@ -110,13 +132,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+        subscription.unsubscribe();
+        clearTimeout(safetyTimer);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Array vazio intencional
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    window.location.href = '/login'; 
+    setIsLoading(true);
+    try {
+        await supabase.auth.signOut();
+        setUser(null);
+        router.refresh(); // Limpa cache do Next.js
+        router.push('/login');
+    } catch (error) {
+        console.error("Erro ao sair:", error);
+        // Fallback forçado se o signOut falhar
+        window.location.href = '/login';
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   return (
