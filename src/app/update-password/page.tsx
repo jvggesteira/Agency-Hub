@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
-// Correção do import para garantir compatibilidade
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '../../lib/supabase'; 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -18,8 +17,39 @@ function UpdatePasswordForm() {
   const [error, setError] = useState<string | null>(null);
   
   const router = useRouter();
-  // Usa o isLoading (que vem do use-auth corrigido)
-  const { user, isLoading: authLoading } = useAuth(); 
+  const searchParams = useSearchParams();
+  const { user, isLoading: authLoading, refreshUser } = useAuth(); 
+
+  // EFEITO ESPECIAL: Força a captura do token da URL se o usuário estiver nulo
+  useEffect(() => {
+    const handleSessionRecovery = async () => {
+      // Se já temos usuário, não precisa fazer nada
+      if (user) return;
+
+      // Verifica se tem tokens na URL (formato ?access_token=...)
+      const accessToken = searchParams.get('access_token');
+      const refreshToken = searchParams.get('refresh_token');
+
+      if (accessToken && refreshToken) {
+        try {
+          // Força a sessão manualmente
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          
+          if (!error) {
+            // Se deu certo, atualiza o contexto global
+            await refreshUser();
+          }
+        } catch (err) {
+          console.error("Erro ao recuperar sessão da URL:", err);
+        }
+      }
+    };
+
+    handleSessionRecovery();
+  }, [searchParams, user, refreshUser]);
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,8 +57,11 @@ function UpdatePasswordForm() {
     setFormLoading(true);
 
     try {
-      if (!user) {
-        throw new Error('Sessão não encontrada. O link pode ter expirado.');
+      // Tentativa final de verificar o usuário antes de enviar
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+
+      if (!currentUser) {
+        throw new Error('Sessão expirou. Por favor, solicite um novo link.');
       }
 
       const { error } = await supabase.auth.updateUser({
@@ -40,7 +73,7 @@ function UpdatePasswordForm() {
       setSuccess(true);
       
       setTimeout(() => {
-        router.push('/'); 
+        router.push('/login'); 
       }, 3000);
 
     } catch (err: any) {
@@ -51,25 +84,28 @@ function UpdatePasswordForm() {
     }
   };
 
+  // Enquanto o Auth carrega OU enquanto tentamos recuperar a sessão da URL
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-2 text-gray-600">Verificando segurança...</span>
+        <span className="ml-2 text-gray-600">Validando link de segurança...</span>
       </div>
     );
   }
 
-  if (!user) {
+  // Só mostra erro se realmente não tiver usuário E não tiver token na URL para tentar recuperar
+  const hasTokenInUrl = searchParams.get('access_token');
+  if (!user && !hasTokenInUrl) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="text-red-600 flex items-center gap-2">
-              <AlertCircle /> Link Inválido
+              <AlertCircle /> Link Inválido ou Expirado
             </CardTitle>
             <CardDescription>
-              Não foi possível validar sua sessão. O link expirou ou já foi usado.
+              Não foi possível validar sua sessão. O link pode ter expirado.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -98,7 +134,7 @@ function UpdatePasswordForm() {
                 <CheckCircle className="w-12 h-12" />
               </div>
               <p className="text-green-700 font-medium">Senha atualizada com sucesso!</p>
-              <p className="text-sm text-gray-500">Redirecionando...</p>
+              <p className="text-sm text-gray-500">Redirecionando para login...</p>
             </div>
           ) : (
             <form onSubmit={handleUpdatePassword} className="space-y-4">
