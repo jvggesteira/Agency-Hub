@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, createContext, useContext } from 'react';
-import { supabase } from '../lib/supabase';
-import { useRouter, usePathname } from 'next/navigation';
+import { supabase } from '@/lib/supabase'; // Caminho absoluto para evitar confusão
+import { useRouter } from 'next/navigation';
 import { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
+// ... (Mantenha suas interfaces UserProfile e AuthContextType iguais)
 interface UserProfile {
   id: string;
   email: string;
@@ -28,9 +29,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
   const router = useRouter();
-  // const pathname = usePathname(); // Não precisamos mais monitorar o path aqui
 
   const fetchUserProfile = async (supabaseUser: User): Promise<UserProfile | null> => {
     if (!supabaseUser) return null;
@@ -66,9 +65,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const refreshUser = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
-      // REMOVIDO: O bloco que impedia o carregamento na página de senha.
-      
       if (session?.user) {
         const profile = await fetchUserProfile(session.user);
         setUser(profile);
@@ -83,20 +79,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
+    // Carrega o estado inicial
     refreshUser();
 
-    const safetyTimer = setTimeout(() => {
-        setIsLoading((prev) => {
-            if (prev) return false;
-            return prev;
-        });
-    }, 4000);
-
+    // Configura o listener de eventos
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       
-      // Mantemos APENAS essa proteção, que é a correta
+      if (event === 'SIGNED_OUT') {
+         setUser(null);
+         setIsLoading(false);
+         router.refresh(); // Força o middleware a rodar novamente
+         return;
+      }
+
       if (event === 'PASSWORD_RECOVERY') {
-        // Não force loading false aqui, deixe o fluxo seguir
         return; 
       }
 
@@ -117,7 +113,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (authListener && authListener.subscription) {
             authListener.subscription.unsubscribe();
         }
-        clearTimeout(safetyTimer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -127,8 +122,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
         await supabase.auth.signOut();
         setUser(null);
-        router.refresh(); 
-        router.push('/login');
+        router.push('/login'); // O middleware vai garantir que fique lá
+        router.refresh();
     } catch (error) {
         console.error("SignOut Error:", error);
         window.location.href = '/login';
