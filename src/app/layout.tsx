@@ -5,6 +5,7 @@ import { AuthProvider } from "@/hooks/use-auth";
 import AuthGuard from "@/components/custom/auth-guard";
 import "./globals.css";
 import { ThemeProvider } from "@/context/theme-context";
+import SessionProvider from "@/components/providers/session-provider"; // <--- 1. NOVO IMPORT
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,11 +31,14 @@ export default function RootLayout({
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider> 
-            <AuthProvider>
-                <AuthGuard>
-                    {children}
-                </AuthGuard>
-            </AuthProvider>
+            {/* 2. ADICIONADO AQUI: Monitora a renovação do token */}
+            <SessionProvider>
+                <AuthProvider>
+                    <AuthGuard>
+                        {children}
+                    </AuthGuard>
+                </AuthProvider>
+            </SessionProvider>
         </ThemeProvider>   
         <Toaster />
       </body>

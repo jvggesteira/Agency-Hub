@@ -1,25 +1,25 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
-import { TrendingUp, TrendingDown, DollarSign, Filter, Download, ArrowUp, ArrowDown } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { supabase } from '@/lib/supabase';
+import { 
+  Loader2, Filter, TrendingUp, TrendingDown, Save, Edit2, Download, ChevronRight, ChevronDown
+} from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { usePermission } from '@/hooks/use-permission';
-import AccessDenied from '@/components/custom/access-denied';
+
+const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+const getPercent = (part: number, total: number) => total === 0 ? '0.0%' : `${((part / total) * 100).toFixed(1)}%`;
 
 interface Transaction {
-  id: string;
-  description: string;
   amount: number;
-  type: 'receita' | 'despesa';
+  type: 'income' | 'expense';
   category: string;
-  frequency: 'fixa' | 'variavel';
+  classification: 'fixo' | 'variavel';
+  client_id: string | null;
+  description: string;
   date: string;
-  clientId?: string;
 }
 
 interface Client {
@@ -27,489 +27,354 @@ interface Client {
   name: string;
 }
 
-interface DREItem {
-  description: string;
-  value: number;
-  type: 'header' | 'subtotal' | 'item' | 'result';
-  color: string;
-  isNegative?: boolean;
+// Tipo para os detalhes agrupados (Ex: Categoria -> Valor Total)
+interface DetailGroup {
+  [category: string]: number;
 }
 
-interface MonthlyResult {
-  monthYear: string;
-  lucroLiquido: number;
-}
+export default function DrePage() {
+  const [loading, setLoading] = useState(true);
+  
+  // Filtros
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth.toString());
+  const [selectedYear, setSelectedYear] = useState(currentYear.toString());
+  const [selectedClient, setSelectedClient] = useState('all');
+  
+  // Configuração
+  const [taxRate, setTaxRate] = useState(6.00);
+  const [isEditingTax, setIsEditingTax] = useState(false);
+  const [clients, setClients] = useState<Client[]>([]);
 
-const getMockData = (key: string) => {
-  if (typeof window !== 'undefined') {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : [];
-  }
-  return [];
-};
-
-// Mapeamento de categorias para o DRE (simplificado para a nova estrutura)
-const CATEGORY_MAPPING: Record<string, 'custo' | 'despesa_operacional' | 'deducao' | 'receita' | 'financeira' | 'imposto'> = {
-  'Serviço': 'receita',
-  'Comissão': 'deducao', // Dedução/Abatimento
-  'Aluguel': 'despesa_operacional', // Despesa Operacional Fixa
-  'Conta de Água': 'despesa_operacional',
-  'Conta de Luz': 'despesa_operacional',
-  'Internet': 'despesa_operacional',
-  'Telefone': 'despesa_operacional',
-  'Salários': 'despesa_operacional',
-  'Impostos': 'imposto', // Imposto
-  'Ferramentas': 'custo', // Custo
-  'Marketing': 'custo', // Custo
-  'Transporte': 'custo', // Custo
-  'Alimentação': 'custo', // Custo
-  'Outros': 'custo', // Default para Custo
-};
-
-const IMPOSTO_PERCENTUAL = 0.15; // 15% de imposto sobre o Resultado Antes dos Impostos
-
-// Função auxiliar para calcular porcentagem
-const calculatePercent = (value: number, base: number) => {
-  if (base === 0) return 0;
-  return (value / base) * 100;
-};
-
-// Função para formatar moeda
-const formatCurrency = (value: number) => {
-  return `R$ ${Math.abs(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-};
-
-// Função para calcular o DRE para um conjunto de transações
-const calculateDRE = (transactions: Transaction[]) => {
-  const totals = {
-    receitaBruta: 0,
-    deducoes: 0,
-    custos: 0,
-    despesasOperacionais: 0,
-    despesasFinanceiras: 0,
-    receitasFinanceiras: 0,
-    impostos: 0,
-  };
-
-  transactions.forEach(t => {
-    const mapping = CATEGORY_MAPPING[t.category] || 'custo';
-    const amount = t.amount;
-
-    if (t.type === 'receita') {
-      totals.receitaBruta += amount;
-    } else if (t.type === 'despesa') {
-      switch (mapping) {
-        case 'deducao':
-          totals.deducoes += amount;
-          break;
-        case 'custo':
-          totals.custos += amount;
-          break;
-        case 'despesa_operacional':
-          totals.despesasOperacionais += amount;
-          break;
-        case 'financeira':
-          totals.despesasFinanceiras += amount;
-          break;
-        case 'imposto':
-          totals.impostos += amount;
-          break;
-        default:
-          totals.custos += amount;
-      }
-    }
+  // DRE Estruturada com Detalhes
+  const [dre, setDre] = useState({
+    grossRevenue: 0,
+    grossRevenueDetails: {} as DetailGroup, // Detalhes da Receita
+    
+    taxes: 0,
+    
+    netRevenue: 0,
+    
+    variableCosts: 0,
+    variableCostsDetails: {} as DetailGroup, // Detalhes Variáveis
+    
+    contributionMargin: 0,
+    
+    fixedCosts: 0,
+    fixedCostsDetails: {} as DetailGroup, // Detalhes Fixos
+    
+    financialResult: 0,
+    financialResultDetails: {} as DetailGroup, // Detalhes Financeiros (Juros, etc)
+    
+    netProfit: 0,
+    marginPercent: 0
   });
 
-  const receitaLiquida = totals.receitaBruta - totals.deducoes;
-  const lucroBruto = receitaLiquida - totals.custos;
-  const resultadoOperacional = lucroBruto - totals.despesasOperacionais;
-  const resultadoAntesImpostos = resultadoOperacional - totals.despesasFinanceiras + totals.receitasFinanceiras;
-  const impostosCalculados = Math.max(0, resultadoAntesImpostos * IMPOSTO_PERCENTUAL);
-  const lucroLiquido = resultadoAntesImpostos - impostosCalculados;
-
-  return {
-    receitaLiquida,
-    lucroBruto,
-    resultadoOperacional,
-    resultadoAntesImpostos,
-    lucroLiquido,
-    totals,
-    impostosCalculados,
-  };
-};
-
-export default function DREPage() {
-  const { can } = usePermission();
-
-  if (!can('dre', 'view')) {
-    return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <main className="flex-1 overflow-y-auto p-6"><AccessDenied /></main>
-        </div>
-      </div>
-    );
-  }
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedClient, setSelectedClient] = useState('all');
-
   useEffect(() => {
-    loadData();
+    fetchInitialData();
   }, []);
 
-  const loadData = () => {
+  useEffect(() => {
+    calculateDre();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth, selectedYear, selectedClient, taxRate]);
+
+  const fetchInitialData = async () => {
     try {
-      setAllTransactions(getMockData('transactions'));
-      const savedClients = getMockData('clients');
-      setClients(savedClients.map((c: any) => ({ id: c.id, name: c.name })));
+      const { data } = await supabase.from('clients').select('id, name').order('name');
+      if (data) setClients(data);
+      
+      const monthKey = `${selectedMonth}-${selectedYear}`;
+      const { data: taxData } = await supabase.from('tax_settings').select('rate').eq('month_key', monthKey).single();
+      if (taxData) setTaxRate(taxData.rate);
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error("Erro ao buscar dados iniciais", error);
+    }
+  };
+
+  const calculateDre = async () => {
+    setLoading(true);
+    try {
+      const start = new Date(Number(selectedYear), Number(selectedMonth) - 1, 1);
+      const end = new Date(Number(selectedYear), Number(selectedMonth), 0, 23, 59, 59);
+
+      let query = supabase
+        .from('transactions')
+        .select('*')
+        .gte('date', start.toISOString())
+        .lte('date', end.toISOString());
+      
+      const { data: transactions, error } = await query;
+      if (error) throw error;
+
+      const txs = (transactions as Transaction[]) || [];
+
+      // Inicializa acumuladores
+      let grossRevenue = 0;
+      let variableCosts = 0;
+      let fixedCosts = 0;
+      let financialResult = 0;
+
+      // Inicializa objetos de detalhe (agrupamento por categoria)
+      const grossRevenueDetails: DetailGroup = {};
+      const variableCostsDetails: DetailGroup = {};
+      const fixedCostsDetails: DetailGroup = {};
+      const financialResultDetails: DetailGroup = {};
+
+      // Função auxiliar para somar no grupo
+      const addToGroup = (group: DetailGroup, key: string, value: number) => {
+        if (!group[key]) group[key] = 0;
+        group[key] += value;
+      };
+
+      txs.forEach(t => {
+          if (selectedClient !== 'all' && t.client_id !== selectedClient) {
+              if (t.client_id) return; 
+              return;
+          }
+
+          const val = Number(t.amount);
+          const categoryName = t.category || 'Outros';
+
+          if (t.type === 'income') {
+              grossRevenue += val;
+              // Na receita, agrupa por Categoria ou Descrição se for Contrato
+              const incomeKey = t.description.startsWith('Contrato:') ? t.description : categoryName;
+              addToGroup(grossRevenueDetails, incomeKey, val);
+
+          } else if (t.type === 'expense') {
+              const isFinancial = ['multa', 'juros', 'tarifas', 'bancario', 'impostos'].some(term => t.category.toLowerCase().includes(term));
+              
+              if (isFinancial) {
+                  financialResult += val;
+                  addToGroup(financialResultDetails, categoryName, val);
+              } else if (t.classification === 'variavel') {
+                  variableCosts += val;
+                  addToGroup(variableCostsDetails, categoryName, val);
+              } else {
+                  fixedCosts += val;
+                  addToGroup(fixedCostsDetails, categoryName, val);
+              }
+          }
+      });
+
+      const calculatedTax = grossRevenue * (taxRate / 100);
+      const netRevenue = grossRevenue - calculatedTax;
+      const contributionMargin = netRevenue - variableCosts;
+      const operatingResult = contributionMargin - fixedCosts;
+      const netProfit = operatingResult - financialResult;
+
+      let marginPercent = 0;
+      if (grossRevenue > 0) marginPercent = (netProfit / grossRevenue) * 100;
+
+      setDre({
+        grossRevenue, grossRevenueDetails,
+        taxes: calculatedTax,
+        netRevenue,
+        variableCosts, variableCostsDetails,
+        contributionMargin,
+        fixedCosts, fixedCostsDetails,
+        financialResult, financialResultDetails,
+        netProfit,
+        marginPercent
+      });
+
+    } catch (error) {
+      console.error('Erro DRE:', error);
+      toast({ title: "Erro", description: "Falha ao calcular DRE." });
     } finally {
       setLoading(false);
     }
   };
 
-  const getMonthName = (month: number) => {
-    const date = new Date(selectedYear, month - 1, 1);
-    return date.toLocaleString('pt-BR', { month: 'long' });
-  };
-
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
-
-  // 1. Filtrar transações para o período e cliente selecionados
-  const currentPeriodTransactions = useMemo(() => {
-    return allTransactions.filter(t => {
-      const date = new Date(t.date);
-      const matchesDate = date.getMonth() + 1 === selectedMonth && date.getFullYear() === selectedYear;
-      const matchesClient = selectedClient === 'all' || t.clientId === selectedClient;
-      return matchesDate && matchesClient;
-    });
-  }, [allTransactions, selectedMonth, selectedYear, selectedClient]);
-
-  // 2. Calcular DRE para o período atual
-  const currentDRE = useMemo(() => calculateDRE(currentPeriodTransactions), [currentPeriodTransactions]);
-
-  // 3. Calcular DRE para o período anterior (comparação)
-  const previousPeriodDRE = useMemo(() => {
-    let prevMonth = selectedMonth - 1;
-    let prevYear = selectedYear;
-
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear -= 1;
+  const saveTaxRate = async () => {
+    const monthKey = `${selectedMonth}-${selectedYear}`;
+    try {
+        await supabase.from('tax_settings').upsert({ month_key: monthKey, rate: taxRate });
+        toast({ title: "Salvo", description: "Imposto atualizado." });
+        setIsEditingTax(false);
+        calculateDre();
+    } catch (error) {
+        toast({ title: "Erro", description: "Falha ao salvar.", variant: "destructive" });
     }
-
-    const previousTransactions = allTransactions.filter(t => {
-      const date = new Date(t.date);
-      const matchesDate = date.getMonth() + 1 === prevMonth && date.getFullYear() === prevYear;
-      const matchesClient = selectedClient === 'all' || t.clientId === selectedClient;
-      return matchesDate && matchesClient;
-    });
-
-    return calculateDRE(previousTransactions);
-  }, [allTransactions, selectedMonth, selectedYear, selectedClient]);
-
-  // 4. Calcular Variação do Lucro Líquido
-  const profitVariation = useMemo(() => {
-    const current = currentDRE.lucroLiquido;
-    const previous = previousPeriodDRE.lucroLiquido;
-
-    if (previous === 0) return null;
-    
-    const variation = ((current - previous) / previous) * 100;
-    return variation;
-  }, [currentDRE.lucroLiquido, previousPeriodDRE.lucroLiquido]);
-
-  // 5. Calcular Lucro Líquido dos Últimos 12 Meses (para o gráfico)
-  const last12MonthsData = useMemo(() => {
-    const data: Record<string, Transaction[]> = {};
-    const today = new Date(selectedYear, selectedMonth - 1, 1);
-
-    for (let i = 0; i < 12; i++) {
-      const date = new Date(today);
-      date.setMonth(today.getMonth() - i);
-      
-      const month = date.getMonth() + 1;
-      const year = date.getFullYear();
-      const key = `${month}/${year}`;
-
-      const monthlyTransactions = allTransactions.filter(t => {
-        const tDate = new Date(t.date);
-        const matchesDate = tDate.getMonth() + 1 === month && tDate.getFullYear() === year;
-        const matchesClient = selectedClient === 'all' || t.clientId === selectedClient;
-        return matchesDate && matchesClient;
-      });
-      
-      data[key] = monthlyTransactions;
-    }
-
-    return Object.keys(data).sort((a, b) => {
-      const [m1, y1] = a.split('/').map(Number);
-      const [m2, y2] = b.split('/').map(Number);
-      return new Date(y1, m1 - 1).getTime() - new Date(y2, m2 - 1).getTime();
-    }).map(key => {
-      const result = calculateDRE(data[key]);
-      return {
-        monthYear: key,
-        lucroLiquido: result.lucroLiquido,
-      };
-    });
-  }, [allTransactions, selectedMonth, selectedYear, selectedClient]);
-
-
-  // 6. Montar a Tabela DRE
-  const dreTable = useMemo(() => {
-    const { receitaLiquida, lucroBruto, resultadoOperacional, lucroLiquido, totals, impostosCalculados } = currentDRE;
-
-    return [
-      { description: 'Receita Bruta', value: totals.receitaBruta, type: 'result', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' },
-      { description: '(-) Deduções e Abatimentos', value: totals.deducoes, type: 'item', color: 'text-red-600 dark:text-red-400', isNegative: true },
-      { description: '= Receita Líquida', value: receitaLiquida, type: 'subtotal', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' },
-      { description: '(-) Custos', value: totals.custos, type: 'item', color: 'text-red-600 dark:text-red-400', isNegative: true },
-      { description: '= Lucro Bruto', value: lucroBruto, type: 'subtotal', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' },
-      { description: '(-) Despesas Operacionais', value: totals.despesasOperacionais, type: 'item', color: 'text-red-600 dark:text-red-400', isNegative: true },
-      { description: '= Resultado Operacional', value: resultadoOperacional, type: 'subtotal', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400' },
-      { description: '(-) Despesas Financeiras', value: totals.despesasFinanceiras, type: 'item', color: 'text-red-600 dark:text-red-400', isNegative: true },
-      { description: '(+) Receitas Financeiras', value: totals.receitasFinanceiras, type: 'item', color: 'text-green-600 dark:text-green-400', isNegative: false },
-      { description: '= Resultado Antes dos Impostos', value: currentDRE.resultadoAntesImpostos, type: 'subtotal', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' },
-      { description: `(-) Impostos (${IMPOSTO_PERCENTUAL * 100}%)`, value: impostosCalculados, type: 'item', color: 'text-red-600 dark:text-red-400', isNegative: true },
-      { description: '= LUCRO LÍQUIDO', value: lucroLiquido, type: 'result', color: 'bg-blue-600 text-white dark:bg-blue-600 dark:text-white' },
-    ];
-  }, [currentDRE]);
-
-  const handleExportPDF = () => {
-    toast({
-      title: "Exportação Iniciada",
-      description: "A exportação do DRE para PDF foi simulada com sucesso.",
-    });
-  };
-
-  const VariationDisplay = ({ variation }: { variation: number | null }) => {
-    if (variation === null) {
-      return <p className="text-xs text-slate-500 dark:text-slate-500">Sem dados anteriores</p>;
-    }
-    
-    const isPositive = variation >= 0;
-    const Icon = isPositive ? ArrowUp : ArrowDown;
-    const color = isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
-
-    return (
-      <div className={`flex items-center gap-1 text-sm font-medium ${color}`}>
-        <Icon className="h-4 w-4" />
-        <span>{Math.abs(variation).toFixed(1)}%</span>
-        <span className="text-slate-500 ml-1 text-xs dark:text-slate-500">vs Mês Anterior</span>
-      </div>
-    );
-  };
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
       <Sidebar />
-      
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
         <main className="flex-1 overflow-y-auto p-6">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">DRE - Demonstração do Resultado do Exercício</h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">Análise detalhada da performance financeira por período.</p>
+          
+          {/* Header e Filtros */}
+          <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">DRE Gerencial Detalhado</h1>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">Análise vertical de resultado (Previsão & Realizado)</p>
+            </div>
+            
+            <div className="flex flex-wrap gap-2 items-center bg-white dark:bg-slate-900 p-2 rounded-lg border shadow-sm">
+                <Filter className="h-4 w-4 text-slate-500 ml-2" />
+                <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none border-r pr-2 dark:text-white dark:bg-slate-900 cursor-pointer">
+                    {Array.from({length: 12}, (_, i) => i + 1).map(m => (
+                        <option key={m} value={m}>{new Date(0, m-1).toLocaleString('pt-BR', {month: 'long'})}</option>
+                    ))}
+                </select>
+                <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none border-r pr-2 dark:text-white dark:bg-slate-900 cursor-pointer">
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                </select>
+                <select value={selectedClient} onChange={(e) => setSelectedClient(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none max-w-[150px] dark:text-white dark:bg-slate-900 cursor-pointer">
+                    <option value="all">Consolidado (Todos)</option>
+                    {clients.map(client => (
+                        <option key={client.id} value={client.id}>{client.name}</option>
+                    ))}
+                </select>
+                <button className="bg-slate-900 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-slate-800 ml-2">
+                    <Download className="h-3 w-3 inline mr-1" /> PDF
+                </button>
+            </div>
           </div>
 
           {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="text-slate-600 dark:text-slate-400 mt-4">Carregando dados financeiros...</p>
-            </div>
+             <div className="flex justify-center py-20"><Loader2 className="animate-spin h-10 w-10 text-blue-600"/></div>
           ) : (
-            <div className="space-y-8">
-              {/* Filters and Export */}
-              <div className="flex flex-wrap gap-4 items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 transition-colors">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <Filter className="h-5 w-5 text-slate-600 dark:text-slate-300" />
-                    <select
-                      value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                      className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                    >
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                        <option key={month} value={month}>
-                          Mês: {getMonthName(month)}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={selectedYear}
-                      onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                      className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                    >
-                      {years.map(year => (
-                        <option key={year} value={year}>
-                          Ano: {year}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedClient}
-                      onChange={(e) => setSelectedClient(e.target.value)}
-                      className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                    >
-                      <option value="all">Cliente: Todos</option>
-                      {clients.map(client => (
-                        <option key={client.id} value={client.id}>
-                          {client.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                
-                <button
-                  onClick={handleExportPDF}
-                  className="bg-slate-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors flex items-center gap-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                >
-                  <Download className="h-5 w-5" />
-                  Exportar PDF
-                </button>
+            <div className="space-y-6">
+              
+              {/* Card de Resumo Principal */}
+              <div className={`p-6 rounded-xl shadow-lg flex justify-between items-center relative overflow-hidden transition-colors ${dre.netProfit >= 0 ? 'bg-slate-900 text-white' : 'bg-red-900 text-white'}`}>
+                    <div className="relative z-10">
+                        <p className="text-sm font-medium text-slate-300 mb-1">Resultado Líquido do Período</p>
+                        <h2 className="text-4xl font-bold">{formatCurrency(dre.netProfit)}</h2>
+                        <div className="flex items-center gap-4 mt-2">
+                            <span className={`text-xs px-2 py-1 rounded ${dre.netProfit >= 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-200'}`}>
+                                Margem Líquida: {dre.marginPercent.toFixed(1)}%
+                            </span>
+                            
+                            {/* Editor de Imposto */}
+                            <div className="flex items-center gap-2 bg-white/10 px-2 py-1 rounded">
+                                <span className="text-xs text-slate-300">Imposto Global:</span>
+                                {isEditingTax ? (
+                                    <div className="flex items-center gap-1">
+                                        <input 
+                                            type="number" 
+                                            value={taxRate} 
+                                            onChange={(e) => setTaxRate(Number(e.target.value))}
+                                            className="w-12 px-1 py-0.5 text-xs text-black rounded focus:outline-none"
+                                            autoFocus
+                                        />
+                                        <button onClick={saveTaxRate}><Save className="h-3 w-3 text-green-400"/></button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1 cursor-pointer hover:text-white" onClick={() => setIsEditingTax(true)}>
+                                        <span className="text-xs font-bold">{taxRate}%</span>
+                                        <Edit2 className="h-3 w-3 text-slate-400"/>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    {dre.netProfit >= 0 ? <TrendingUp className="h-16 w-16 text-white/10 absolute right-4 -bottom-2" /> : <TrendingDown className="h-16 w-16 text-white/10 absolute right-4 -bottom-2" />}
               </div>
 
-              {/* Key Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Receita Líquida</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(currentDRE.receitaLiquida)}</div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Após deduções</p>
-                  </CardContent>
-                </Card>
-
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Lucro Bruto</CardTitle>
-                    <DollarSign className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{formatCurrency(currentDRE.lucroBruto)}</div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Margem: {calculatePercent(currentDRE.lucroBruto, currentDRE.receitaLiquida).toFixed(1)}%</p>
-                  </CardContent>
-                </Card>
-                
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Resultado Operacional</CardTitle>
-                    <DollarSign className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{formatCurrency(currentDRE.resultadoOperacional)}</div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Margem: {calculatePercent(currentDRE.resultadoOperacional, currentDRE.receitaLiquida).toFixed(1)}%</p>
-                  </CardContent>
-                </Card>
-
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Lucro Líquido</CardTitle>
-                    <DollarSign className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className={`text-2xl font-bold ${currentDRE.lucroLiquido >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(currentDRE.lucroLiquido)}</div>
-                    <VariationDisplay variation={profitVariation} />
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Chart */}
-              <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <CardHeader>
-                  <CardTitle className="text-xl font-semibold text-slate-900 dark:text-white">Evolução do Lucro Líquido (Últimos 12 Meses)</CardTitle>
-                </CardHeader>
-                <CardContent className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={last12MonthsData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.2} />
-                      <XAxis dataKey="monthYear" stroke="#64748b" />
-                      <YAxis 
-                        stroke="#64748b" 
-                        tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`}
-                      />
-                      <Tooltip 
-                        formatter={(value: number) => [formatCurrency(value), 'Lucro Líquido']}
-                        labelFormatter={(label) => `Mês: ${label}`}
-                        contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }}
-                        itemStyle={{ color: '#fff' }}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="lucroLiquido" 
-                        stroke="#3b82f6" 
-                        strokeWidth={2} 
-                        dot={{ r: 4, fill: '#3b82f6' }}
-                        activeDot={{ r: 6 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              {/* DRE Table */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-colors">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">Demonstrativo ({getMonthName(selectedMonth)}/{selectedYear})</h2>
-
-                <div className="space-y-1">
-                  <div className="grid grid-cols-3 font-medium text-sm text-slate-600 dark:text-slate-400 border-b dark:border-slate-800 pb-2">
-                    <span className="col-span-1">Descrição</span>
-                    <span className="text-right">Valor</span>
-                    <span className="text-right">% Receita Bruta</span>
-                  </div>
-
-                  {dreTable.map((item, index) => {
-                    const isResult = item.type === 'result';
-                    const isSubtotal = item.type === 'subtotal';
-                    const isItem = item.type === 'item';
-                    const isLucroLiquido = item.description.includes('LUCRO LÍQUIDO');
+              {/* Tabela DRE Interativa */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 grid grid-cols-12 text-sm font-semibold text-slate-600 dark:text-slate-400">
+                    <div className="col-span-8">Descrição</div>
+                    <div className="col-span-2 text-right">Valor</div>
+                    <div className="col-span-2 text-right text-xs">% RB</div>
+                 </div>
+                 
+                 <div className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
                     
-                    const percent = calculatePercent(item.value, currentDRE.totals.receitaBruta);
-                    const valueDisplay = formatCurrency(item.value);
-                    
-                    return (
-                      <div
-                        key={index}
-                        className={cn(
-                          "grid grid-cols-3 py-2 transition-colors",
-                          isLucroLiquido 
-                            ? 'font-bold text-white rounded-lg px-2' 
-                            : isSubtotal 
-                            ? 'font-semibold border-t border-b border-slate-200 dark:border-slate-800 dark:text-slate-200' 
-                            : isItem 
-                            ? 'text-slate-700 dark:text-slate-400' 
-                            : 'font-bold text-slate-900 dark:text-white',
-                          isLucroLiquido && item.value >= 0 ? 'bg-green-600' : isLucroLiquido && item.value < 0 ? 'bg-red-600' : item.color
-                        )}
-                      >
-                        <span className={`col-span-1 ${isItem ? 'pl-4' : ''}`}>{item.description}</span>
-                        <span className={cn(
-                          "text-right",
-                          item.isNegative && !isLucroLiquido ? 'text-red-600 dark:text-red-400' : '',
-                          isLucroLiquido ? 'text-white' : ''
-                        )}>
-                          {item.isNegative && item.value !== 0 ? `(${formatCurrency(item.value)})` : formatCurrency(item.value)}
-                        </span>
-                        <span className="text-right">{percent.toFixed(1)}%</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                    {/* 1. Receita Bruta */}
+                    <ExpandableDRERow 
+                        label="(+) Receita Operacional Bruta" 
+                        value={dre.grossRevenue} 
+                        details={dre.grossRevenueDetails} 
+                        totalRevenue={dre.grossRevenue}
+                        type="positive"
+                        bold
+                    />
+
+                    {/* 2. Impostos (Sem detalhe pois é cálculo) */}
+                    <div className="p-3 grid grid-cols-12 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                        <div className="col-span-8 pl-10 text-slate-600 dark:text-slate-400">
+                            <span className="text-red-500">(-)</span> Impostos sobre Venda (Estimado {taxRate}%)
+                        </div>
+                        <div className="col-span-2 text-right text-red-500 font-medium">{formatCurrency(dre.taxes)}</div>
+                        <div className="col-span-2 text-right text-slate-400">{getPercent(dre.taxes, dre.grossRevenue)}</div>
+                    </div>
+
+                    {/* = Receita Líquida */}
+                    <div className="p-3 grid grid-cols-12 items-center bg-blue-50/50 dark:bg-blue-900/10 font-semibold border-y border-blue-100 dark:border-blue-900/30">
+                        <div className="col-span-8 pl-4 text-blue-800 dark:text-blue-300">(=) Receita Líquida</div>
+                        <div className="col-span-2 text-right text-blue-800 dark:text-blue-300">{formatCurrency(dre.netRevenue)}</div>
+                        <div className="col-span-2 text-right text-blue-400 text-xs">{getPercent(dre.netRevenue, dre.grossRevenue)}</div>
+                    </div>
+
+                    {/* 3. Custos Variáveis */}
+                    <ExpandableDRERow 
+                        label="(-) Custos Variáveis (Projetos/Freelancers/Comissões)" 
+                        value={dre.variableCosts} 
+                        details={dre.variableCostsDetails} 
+                        totalRevenue={dre.grossRevenue}
+                        type="negative"
+                    />
+
+                    {/* = Margem de Contribuição */}
+                    <div className="p-3 grid grid-cols-12 items-center bg-yellow-50/50 dark:bg-yellow-900/10 font-semibold border-y border-yellow-100 dark:border-yellow-900/30">
+                        <div className="col-span-8 pl-4 text-yellow-800 dark:text-yellow-400">(=) Margem de Contribuição</div>
+                        <div className="col-span-2 text-right text-yellow-800 dark:text-yellow-400">{formatCurrency(dre.contributionMargin)}</div>
+                        <div className="col-span-2 text-right text-yellow-600 dark:text-yellow-600 text-xs">{getPercent(dre.contributionMargin, dre.grossRevenue)}</div>
+                    </div>
+
+                    {/* 4. Custos Fixos */}
+                    {selectedClient === 'all' && (
+                        <ExpandableDRERow 
+                            label="(-) Custos Fixos / Despesas Operacionais" 
+                            value={dre.fixedCosts} 
+                            details={dre.fixedCostsDetails} 
+                            totalRevenue={dre.grossRevenue}
+                            type="negative"
+                        />
+                    )}
+
+                    {/* = Resultado Operacional */}
+                    {selectedClient === 'all' && (
+                        <div className="p-3 grid grid-cols-12 items-center bg-slate-100 dark:bg-slate-800 font-semibold">
+                            <div className="col-span-8 pl-4 text-slate-700 dark:text-slate-300">(=) Resultado Operacional (EBITDA)</div>
+                            <div className="col-span-2 text-right text-slate-800 dark:text-white">
+                                {formatCurrency(dre.contributionMargin - dre.fixedCosts)}
+                            </div>
+                            {/* ADICIONADO: Cálculo da porcentagem que faltava */}
+                            <div className="col-span-2 text-right text-slate-500 text-xs">
+                                {getPercent(dre.contributionMargin - dre.fixedCosts, dre.grossRevenue)}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 5. Financeiro */}
+                    {selectedClient === 'all' && (
+                        <ExpandableDRERow 
+                            label="(-) Resultado Financeiro (Juros/Tarifas)" 
+                            value={dre.financialResult} 
+                            details={dre.financialResultDetails} 
+                            totalRevenue={dre.grossRevenue}
+                            type="negative"
+                        />
+                    )}
+
+                    {/* = LUCRO LÍQUIDO FINAL */}
+                    <div className={`p-4 grid grid-cols-12 items-center font-bold text-lg border-t-2 ${dre.netProfit >= 0 ? 'border-green-500 bg-green-50 dark:bg-green-900/10 text-green-700' : 'border-red-500 bg-red-50 dark:bg-red-900/10 text-red-700'}`}>
+                        <div className="col-span-8">(=) Resultado Líquido do Exercício</div>
+                        <div className="col-span-2 text-right">{formatCurrency(dre.netProfit)}</div>
+                        <div className="col-span-2 text-right text-sm">{getPercent(dre.netProfit, dre.grossRevenue)}</div>
+                    </div>
+
+                 </div>
               </div>
             </div>
           )}
@@ -517,4 +382,60 @@ export default function DREPage() {
       </div>
     </div>
   );
+}
+
+// --- NOVO COMPONENTE DE LINHA EXPANSÍVEL ---
+function ExpandableDRERow({ label, value, details, totalRevenue, type, bold = false }: any) {
+    const [expanded, setExpanded] = useState(false);
+    const hasDetails = details && Object.keys(details).length > 0;
+
+    const getColor = () => {
+        if (type === 'positive') return 'text-green-600 dark:text-green-400';
+        if (type === 'negative') return 'text-red-500';
+        return 'text-slate-900 dark:text-white';
+    };
+
+    return (
+        <div className="border-b border-slate-50 dark:border-slate-800/50">
+            {/* Linha Principal */}
+            <div 
+                className={`p-3 grid grid-cols-12 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer select-none`}
+                onClick={() => hasDetails && setExpanded(!expanded)}
+            >
+                <div className={`col-span-8 flex items-center gap-2 ${bold ? 'font-bold' : 'font-medium'} text-slate-700 dark:text-slate-200`}>
+                    {/* Ícone de Expansão */}
+                    <div className={`w-6 h-6 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors ${!hasDetails ? 'invisible' : ''}`}>
+                        {expanded ? <ChevronDown className="h-4 w-4 text-slate-500"/> : <ChevronRight className="h-4 w-4 text-slate-500"/>}
+                    </div>
+                    {label}
+                </div>
+                <div className={`col-span-2 text-right ${bold ? 'font-bold' : 'font-medium'} ${getColor()}`}>
+                    {formatCurrency(value)}
+                </div>
+                <div className="col-span-2 text-right text-slate-400">
+                    {getPercent(value, totalRevenue)}
+                </div>
+            </div>
+
+            {/* Área de Detalhes (Accordion) */}
+            {expanded && hasDetails && (
+                <div className="bg-slate-50/50 dark:bg-slate-900/50 shadow-inner">
+                    {Object.entries(details).sort(([,a], [,b]) => (b as number) - (a as number)).map(([cat, val], idx) => (
+                        <div key={idx} className="grid grid-cols-12 py-2 px-3 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <div className="col-span-8 pl-12 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                                {cat}
+                            </div>
+                            <div className="col-span-2 text-right font-mono">
+                                {formatCurrency(val as number)}
+                            </div>
+                            <div className="col-span-2 text-right opacity-50">
+                                {getPercent(val as number, totalRevenue)}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }

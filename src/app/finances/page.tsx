@@ -1,588 +1,402 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
-import { DollarSign, TrendingUp, TrendingDown, Plus, Search, Filter, Edit, Trash2, Calendar, X } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { 
+  DollarSign, TrendingUp, TrendingDown, Filter, Loader2, ArrowUpRight, ArrowDownRight, Search, Plus, X, Trash2, Calendar, Repeat, MoreHorizontal,
+  CreditCard, QrCode, Barcode, Banknote // Ícones novos importados
+} from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { toast } from '@/hooks/use-toast';
-import { usePermission } from '@/hooks/use-permission';
-import AccessDenied from '@/components/custom/access-denied';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
+const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
 const transactionSchema = z.object({
-  description: z.string().min(1, 'Descrição é obrigatória'),
-  amount: z.string().min(1, 'Valor é obrigatório'),
-  type: z.enum(['receita', 'despesa']),
-  category: z.string().min(1, 'Categoria é obrigatória'),
-  frequency: z.enum(['fixa', 'variavel']),
-  date: z.string().min(1, 'Data é obrigatória'),
+  description: z.string().min(1, 'Descrição obrigatória'),
+  amount: z.string().min(1, 'Valor obrigatório'),
+  type: z.enum(['income', 'expense']),
+  category: z.string().min(1, 'Categoria obrigatória'),
+  customCategory: z.string().optional(),
+  classification: z.enum(['fixo', 'variavel']),
+  payment_method: z.string().optional(), // Novo campo no schema
+  date: z.string().min(1, 'Data obrigatória'),
+  repeat_months: z.string().optional(),
   notes: z.string().optional(),
 });
 
 type TransactionFormData = z.infer<typeof transactionSchema>;
 
-type TransactionTypeFilter = 'all' | 'receita' | 'despesa';
-type TransactionFrequencyFilter = 'all' | 'fixa' | 'variavel';
-
 interface Transaction {
   id: string;
   description: string;
   amount: number;
-  type: 'receita' | 'despesa';
-  category: string;
-  frequency: 'fixa' | 'variavel';
+  type: 'income' | 'expense';
   date: string;
-  notes?: string;
-  created_at: string;
+  category: string;
+  classification: 'fixo' | 'variavel';
+  payment_method?: string; // Novo campo na interface
+  installment_number?: number;
+  installment_total?: number;
+  group_id?: string;
 }
 
 const CATEGORIES = [
-  'Serviço',
-  'Alimentação',
-  'Comissão',
-  'Ferramentas',
-  'Aluguel',
-  'Conta de Água',
-  'Conta de Luz',
-  'Internet',
-  'Telefone',
-  'Transporte',
-  'Marketing',
-  'Salários',
-  'Impostos',
-  'Outros',
+    'Vendas', 'Aluguel', 'Colaborador', 'Freelancers', 'Água', 'Luz', 'Internet', 
+    'Comissão', 'Contrato', 'Alimentação', 'Transporte', 'Marketing', 'Softwares', 'Impostos', 'Outro'
 ];
 
 export default function FinancesPage() {
-  const { can } = usePermission();
-
-  if (!can('finances', 'view')) {
-    return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <main className="flex-1 overflow-y-auto p-6">
-             <AccessDenied />
-          </main>
-        </div>
-      </div>
-    );
-  }
+  const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  
+  // Filtros
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState<TransactionTypeFilter>('all');
-  const [frequencyFilter, setFrequencyFilter] = useState<TransactionFrequencyFilter>('all');
+  
+  // Novos Filtros
+  const [filterType, setFilterType] = useState('all'); // all, income, expense
+  const [filterClass, setFilterClass] = useState('all'); // all, fixo, variavel
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<TransactionFormData>({
+  const [metrics, setMetrics] = useState({ income: 0, expenses: 0, balance: 0 });
+  
+  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
-    defaultValues: {
-      type: 'receita',
-      frequency: 'variavel',
-      date: new Date().toISOString().split('T')[0],
-    },
+    defaultValues: { type: 'expense', classification: 'variavel', payment_method: 'pix', date: new Date().toISOString().split('T')[0], repeat_months: '1' }
   });
 
-  useEffect(() => {
-    loadTransactions();
-  }, []);
+  const selectedCategory = watch('category');
+  const selectedType = watch('type');
 
-  const loadTransactions = () => {
+  useEffect(() => { fetchFinancialData(); }, [selectedMonth, selectedYear]);
+
+  const fetchFinancialData = async () => {
+    setLoading(true);
     try {
-      const savedTransactions = localStorage.getItem('transactions');
-      if (savedTransactions) {
-        setTransactions(JSON.parse(savedTransactions));
-      }
+      const start = new Date(selectedYear, selectedMonth, 1);
+      const end = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59);
+
+      const { data: dbTransactions, error: txError } = await supabase
+        .from('transactions')
+        .select('*')
+        .gte('date', start.toISOString())
+        .lte('date', end.toISOString())
+        .order('date', { ascending: false });
+
+      if (txError) throw txError;
+
+      const formatted: Transaction[] = (dbTransactions || []).map(t => ({
+          id: t.id,
+          description: t.description,
+          amount: Number(t.amount),
+          type: t.type,
+          date: t.date,
+          category: t.category,
+          classification: t.classification || 'variavel',
+          payment_method: t.payment_method || 'pix', // Mapeando forma de pagamento
+          installment_number: t.installment_number || 1,
+          installment_total: t.installment_total || 1,
+          group_id: t.group_id
+      }));
+      setTransactions(formatted);
+      calculateMetrics(formatted);
+
     } catch (error) {
-      console.error('Erro ao carregar transações:', error);
+      toast({ title: "Erro", description: "Falha ao carregar financeiro.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  const saveTransactions = (transactionsList: Transaction[]) => {
-    try {
-      localStorage.setItem('transactions', JSON.stringify(transactionsList));
-    } catch (error) {
-      console.error('Erro ao salvar transações:', error);
-    }
+  const calculateMetrics = (data: Transaction[]) => {
+    const income = data.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
+    const expenses = data.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+    setMetrics({ income, expenses, balance: income - expenses });
   };
 
-  const onSubmit = (data: TransactionFormData) => {
-    const newTransaction: Transaction = {
-      id: editingTransaction?.id || Date.now().toString(),
-      description: data.description,
-      amount: parseFloat(data.amount.replace(',', '.')),
-      type: data.type,
-      category: data.category,
-      frequency: data.frequency,
-      date: data.date,
-      notes: data.notes,
-      created_at: editingTransaction?.created_at || new Date().toISOString(),
-    };
+  const onSubmit = async (data: TransactionFormData) => {
+      try {
+          const finalCategory = data.category === 'Outro' ? data.customCategory || 'Outro' : data.category;
+          const numericAmount = parseFloat(data.amount.replace(/[^\d,.-]/g, '').replace(',', '.'));
+          const repeat = parseInt(data.repeat_months || '1');
+          const groupId = repeat > 1 ? crypto.randomUUID() : null;
 
-    if (editingTransaction) {
-      const updatedTransactions = transactions.map(transaction =>
-        transaction.id === editingTransaction.id ? newTransaction : transaction
-      );
-      setTransactions(updatedTransactions);
-      saveTransactions(updatedTransactions);
-      toast({ title: "Sucesso", description: "Transação atualizada." });
-    } else {
-      const updatedTransactions = [newTransaction, ...transactions];
-      setTransactions(updatedTransactions);
-      saveTransactions(updatedTransactions);
-      toast({ title: "Sucesso", description: "Nova transação registrada." });
-    }
+          const transactionsToInsert = [];
+          for (let i = 0; i < repeat; i++) {
+              const dateObj = new Date(data.date);
+              dateObj.setMonth(dateObj.getMonth() + i);
+              
+              transactionsToInsert.push({
+                  description: data.description,
+                  amount: numericAmount,
+                  type: data.type,
+                  category: finalCategory,
+                  classification: data.classification,
+                  payment_method: data.payment_method || 'pix', // Salvando forma de pagamento
+                  date: dateObj.toISOString(),
+                  notes: data.notes,
+                  group_id: groupId,
+                  installment_number: i + 1,
+                  installment_total: repeat
+              });
+          }
 
-    setIsModalOpen(false);
-    setEditingTransaction(null);
-    reset({ type: 'receita', frequency: 'variavel', date: new Date().toISOString().split('T')[0] });
+          const { error } = await supabase.from('transactions').insert(transactionsToInsert);
+          if(error) throw error;
+          
+          toast({ title: repeat > 1 ? `${repeat} lançamentos gerados!` : "Lançamento salvo!" });
+          setIsModalOpen(false); reset(); fetchFinancialData();
+      } catch (error: any) {
+          toast({ title: "Erro", description: error.message, variant: "destructive" });
+      }
   };
 
-  const deleteTransaction = (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
-
-    const updatedTransactions = transactions.filter(transaction => transaction.id !== id);
-    setTransactions(updatedTransactions);
-    saveTransactions(updatedTransactions);
-    toast({ title: "Excluído", description: "Transação removida.", variant: "destructive" });
+  const handleDelete = async (t: Transaction, deleteMode: 'single' | 'future') => {
+      try {
+          if (deleteMode === 'single') {
+              await supabase.from('transactions').delete().eq('id', t.id);
+              toast({ title: "Lançamento excluído" });
+          } else if (deleteMode === 'future' && t.group_id) {
+              const { count } = await supabase.from('transactions')
+                  .delete({ count: 'exact' })
+                  .eq('group_id', t.group_id)
+                  .gte('date', t.date);
+              toast({ title: "Recorrência atualizada", description: `${count} lançamentos removidos.` });
+          }
+          fetchFinancialData();
+      } catch (error) {
+          toast({ title: "Erro ao excluir", variant: "destructive" });
+      }
   };
 
-  const openEditModal = (transaction: Transaction) => {
-    setEditingTransaction(transaction);
-    reset({
-      description: transaction.description,
-      amount: transaction.amount.toString(),
-      type: transaction.type,
-      category: transaction.category,
-      frequency: transaction.frequency,
-      date: transaction.date,
-      notes: transaction.notes || '',
-    });
-    setIsModalOpen(true);
+  const filteredTransactions = transactions.filter(t => {
+      const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesType = filterType === 'all' || t.type === filterType;
+      const matchesClass = filterClass === 'all' || t.classification === filterClass;
+      return matchesSearch && matchesType && matchesClass;
+  });
+
+  const months = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const years = [2024, 2025, 2026, 2027];
+
+  // Helper para ícones de pagamento
+  const getPaymentIcon = (method: string) => {
+      switch (method) {
+          case 'cartao': return <CreditCard className="h-4 w-4 text-purple-500" />;
+          case 'boleto': return <Barcode className="h-4 w-4 text-slate-500" />;
+          case 'dinheiro': return <Banknote className="h-4 w-4 text-green-600" />;
+          default: return <QrCode className="h-4 w-4 text-blue-500" />; // PIX padrão
+      }
   };
-
-  const applyFilters = (transaction: Transaction) => {
-    const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transaction.category.toLowerCase().includes(searchTerm.toLowerCase());
-
-    if (!matchesSearch) return false;
-
-    const matchesType = typeFilter === 'all' || transaction.type === typeFilter;
-    const matchesFrequency = frequencyFilter === 'all' || transaction.frequency === frequencyFilter;
-
-    return matchesType && matchesFrequency;
-  };
-
-  const filteredTransactions = transactions.filter(applyFilters);
-
-  const totalReceitas = filteredTransactions
-    .filter(t => t.type === 'receita')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalDespesas = filteredTransactions
-    .filter(t => t.type === 'despesa')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const saldo = totalReceitas - totalDespesas;
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
       <Sidebar />
-      
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
         <main className="flex-1 overflow-y-auto p-6">
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Financeiro</h1>
-                <p className="text-slate-600 dark:text-slate-400 mt-1">Controle de receitas e despesas</p>
-              </div>
-              <button
-                onClick={() => {
-                  setEditingTransaction(null);
-                  reset({ type: 'receita', frequency: 'variavel', date: new Date().toISOString().split('T')[0] });
-                  setIsModalOpen(true);
-                }}
-                className="bg-slate-900 text-white px-6 py-3 rounded-lg font-medium hover:shadow-lg transition-all flex items-center gap-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-              >
-                <Plus className="h-5 w-5" />
-                Nova Transação
-              </button>
+          
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Financeiro</h1>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">Gestão de fluxo de caixa</p>
+            </div>
+            
+            <div className="flex gap-2 flex-wrap items-center">
+                 <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
+                    <Calendar className="h-4 w-4 text-slate-500 ml-2" />
+                    <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="bg-transparent text-sm font-medium dark:text-white cursor-pointer focus:outline-none">
+                        {months.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                    </select>
+                    <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="bg-transparent text-sm font-medium dark:text-white cursor-pointer border-l pl-2 dark:border-slate-700 focus:outline-none">
+                        {years.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                </div>
+                <Button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 h-10">
+                    <Plus className="mr-2 h-4 w-4"/> Novo Lançamento
+                </Button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-colors">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-12 w-12 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                  <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
+          {loading ? (
+             <div className="flex justify-center py-20"><Loader2 className="animate-spin h-10 w-10 text-blue-600"/></div>
+          ) : (
+            <>
+              <div className="grid gap-6 md:grid-cols-3 mb-8">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Receitas</span><div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg"><TrendingUp className="h-5 w-5 text-green-600" /></div></div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.income)}</h2>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Despesas</span><div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg"><TrendingDown className="h-5 w-5 text-red-600" /></div></div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.expenses)}</h2>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Saldo</span><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg"><DollarSign className="h-5 w-5 text-blue-600" /></div></div>
+                    <h2 className={`text-2xl font-bold ${metrics.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(metrics.balance)}</h2>
                 </div>
               </div>
-              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Receitas (Filtradas)</h3>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                R$ {totalReceitas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
 
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-colors">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-12 w-12 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                  <TrendingDown className="h-6 w-6 text-red-600 dark:text-red-400" />
-                </div>
-              </div>
-              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Despesas (Filtradas)</h3>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                R$ {totalDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-colors">
-              <div className="flex items-center justify-between mb-4">
-                <div className="h-12 w-12 rounded-lg bg-slate-900 dark:bg-slate-800 flex items-center justify-center">
-                  <DollarSign className="h-6 w-6 text-white" />
-                </div>
-              </div>
-              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Saldo (Filtrado)</h3>
-              <p className={`text-2xl font-bold ${saldo >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                R$ {saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-colors">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar transações..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:placeholder-slate-500"
-                />
-              </div>
-              <button 
-                onClick={() => setIsFilterModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300"
-              >
-                <Filter className="h-5 w-5 text-slate-600" />
-                Filtros
-              </button>
-            </div>
-
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                <p className="text-slate-600 dark:text-slate-400 mt-4">Carregando transações...</p>
-              </div>
-            ) : filteredTransactions.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
-                    <DollarSign className="h-8 w-8 text-slate-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Nenhuma transação registrada</h3>
-                <p className="text-slate-600 dark:text-slate-400 mb-6">Comece registrando suas receitas e despesas</p>
-                <button
-                  onClick={() => {
-                    setEditingTransaction(null);
-                    reset({ type: 'receita', frequency: 'variavel', date: new Date().toISOString().split('T')[0] });
-                    setIsModalOpen(true);
-                  }}
-                  className="bg-slate-900 text-white px-6 py-3 rounded-lg font-medium hover:shadow-lg transition-all inline-flex items-center gap-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                >
-                  <Plus className="h-5 w-5" />
-                  Adicionar Transação
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredTransactions.map((transaction) => (
-                  <div key={transaction.id} className="bg-slate-50 dark:bg-slate-950 rounded-lg p-4 border border-slate-200 dark:border-slate-800 hover:shadow-md transition-all">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className={`h-10 w-10 rounded-lg ${transaction.type === 'receita' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'} flex items-center justify-center`}>
-                            {transaction.type === 'receita' ? (
-                              <TrendingUp className={`h-5 w-5 text-green-600 dark:text-green-400`} />
-                            ) : (
-                              <TrendingDown className={`h-5 w-5 text-red-600 dark:text-red-400`} />
-                            )}
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-slate-900 dark:text-white">{transaction.description}</h3>
-                            <p className="text-sm text-slate-600 dark:text-slate-400">
-                              {transaction.category} • {transaction.frequency === 'fixa' ? 'Fixa' : 'Variável'}
-                            </p>
-                          </div>
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col h-[600px]">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+                  
+                  <div className="flex gap-4 items-center w-full">
+                        <h3 className="font-bold text-slate-900 dark:text-white whitespace-nowrap">Extrato</h3>
+                        <div className="relative w-full max-w-xs">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"/>
+                            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent dark:text-white"/>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-500 ml-12">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-4 w-4" />
-                            {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                          </div>
-                          {transaction.notes && (
-                            <p className="text-sm text-slate-500">{transaction.notes}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <p className={`text-xl font-bold ${transaction.type === 'receita' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {transaction.type === 'receita' ? '+' : '-'} R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </p>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => openEditModal(transaction)}
-                            className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteTransaction(transaction.id)}
-                            className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+               
+                    {/* NOVOS FILTROS */}
+                    <div className="flex gap-2">
+                        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Todas</option><option value="income">Receitas</option><option value="expense">Despesas</option></select>
+                        <select value={filterClass} onChange={e => setFilterClass(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Tudo</option><option value="fixo">Fixo</option><option value="variavel">Variável</option></select>
+                    </div>
+                </div>
+                
+                <div className="flex-1 overflow-auto p-0">
+                    <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800 sticky top-0">
+                            <tr>
+                                <th className="px-6 py-3">Descrição</th>
+                                <th className="px-6 py-3">Classificação</th>
+                                <th className="px-6 py-3">Categoria</th>
+                                <th className="px-6 py-3">Data</th>
+                                <th className="px-6 py-3 text-right">Valor</th>
+                                <th className="px-6 py-3 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredTransactions.length === 0 ? (
+                                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-500">Nenhum lançamento encontrado.</td></tr>
+                            ) : (
+                                filteredTransactions.map((t) => (
+                                    <tr key={t.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 group">
+                                        <td className="px-6 py-4 font-medium text-slate-900 dark:text-white flex items-center gap-3">
+                                            <div className={`p-1.5 rounded-full ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                                {t.type === 'income' ? <ArrowUpRight className="h-3 w-3"/> : <ArrowDownRight className="h-3 w-3"/>}
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    {/* Ícone da forma de pagamento */}
+                                                    <div title={t.payment_method}>
+                                                        {getPaymentIcon(t.payment_method || 'pix')}
+                                                    </div>
+                                                    <p>{t.description}</p>
+                                                </div>
+                                                {t.installment_total && t.installment_total > 1 && (
+                                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 rounded text-slate-500">
+                                                        {t.installment_number}/{t.installment_total}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={`text-xs px-2 py-1 rounded-full capitalize ${t.classification === 'fixo' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+                                                {t.classification}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-500">{t.category}</td>
+                                        <td className="px-6 py-4 text-slate-500">{new Date(t.date).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</td>
+                                        <td className={`px-6 py-4 text-right font-medium ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                             <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <button className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100">
+                                                        <MoreHorizontal className="h-4 w-4"/>
+                                                    </button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => handleDelete(t, 'single')} className="text-red-600 cursor-pointer">
+                                                        <Trash2 className="h-4 w-4 mr-2"/> Excluir este
+                                                    </DropdownMenuItem>
+                                                    {t.group_id && (
+                                                        <DropdownMenuItem onClick={() => handleDelete(t, 'future')} className="text-red-600 cursor-pointer">
+                                                            <Repeat className="h-4 w-4 mr-2"/> Excluir este e futuros
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+               </div>
+            </>
+          )}
         </main>
       </div>
 
-      {/* Modal Transação (Criação/Edição) */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-800">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                    {editingTransaction ? 'Editar Transação' : 'Nova Transação'}
-                </h2>
-                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                    <X className="h-5 w-5" />
-                </button>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div className="flex justify-between mb-6">
+                  <h2 className="text-xl font-bold dark:text-white">Novo Lançamento</h2>
+                  <button onClick={() => setIsModalOpen(false)}><X className="dark:text-white"/></button>
               </div>
-
+              
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Tipo *
-                    </label>
-                    <select
-                      {...register('type')}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                    >
-                      <option value="receita">Receita</option>
-                      <option value="despesa">Despesa</option>
-                    </select>
+                  <div className="grid grid-cols-2 gap-3">
+                      <button type="button" onClick={() => setValue('type', 'income')} className={`py-3 rounded-lg border font-medium flex items-center justify-center gap-2 transition-all ${selectedType === 'income' ? 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}><ArrowUpRight className="h-4 w-4"/> Receita</button>
+                      <button type="button" onClick={() => setValue('type', 'expense')} className={`py-3 rounded-lg border font-medium flex items-center justify-center gap-2 transition-all ${selectedType === 'expense' ? 'bg-red-100 border-red-500 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}><ArrowDownRight className="h-4 w-4"/> Despesa</button>
+                  </div>
+
+                  <div><label className="text-sm font-medium dark:text-slate-300">Descrição</label><Input {...register('description')} placeholder="Ex: Salário, Contrato X" className="dark:bg-slate-950"/></div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                      <div><label className="text-sm font-medium dark:text-slate-300">Valor (R$)</label><Input {...register('amount')} placeholder="0,00" className="dark:bg-slate-950"/></div>
+                      <div><label className="text-sm font-medium dark:text-slate-300">Data de Pagamento</label><Input type="date" {...register('date')} className="dark:bg-slate-950"/></div>
+                  </div>
+
+                  {/* NOVO CAMPO DE FORMA DE PAGAMENTO */}
+                  <div className="grid grid-cols-2 gap-4">
+                      <div>
+                          <label className="text-sm font-medium dark:text-slate-300">Categoria</label>
+                          <select {...register('category')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950">
+                              <option value="">Selecione...</option>
+                              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="text-sm font-medium dark:text-slate-300">Pagamento</label>
+                          <select {...register('payment_method')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950">
+                              <option value="pix">PIX / Transf.</option>
+                              <option value="boleto">Boleto</option>
+                              <option value="cartao">Cartão Crédito</option>
+                              <option value="dinheiro">Dinheiro</option>
+                          </select>
+                      </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Frequência *
-                    </label>
-                    <select
-                      {...register('frequency')}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                    >
-                      <option value="fixa">Fixa</option>
-                      <option value="variavel">Variável</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Descrição *
-                  </label>
-                  <input
-                    {...register('description')}
-                    type="text"
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
-                    placeholder="Ex: Pagamento de cliente"
-                  />
-                  {errors.description && (
-                    <p className="text-red-600 text-sm mt-1">{errors.description.message}</p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Valor *
-                    </label>
-                    <input
-                      {...register('amount')}
-                      type="text"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
-                      placeholder="0.00"
-                    />
-                    {errors.amount && (
-                      <p className="text-red-600 text-sm mt-1">{errors.amount.message}</p>
-                    )}
+                       <label className="text-sm font-medium dark:text-slate-300">Classificação</label>
+                       <select {...register('classification')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="variavel">Variável</option><option value="fixo">Fixo</option></select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Data *
-                    </label>
-                    <input
-                      {...register('date')}
-                      type="date"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
-                    />
-                    {errors.date && (
-                      <p className="text-red-600 text-sm mt-1">{errors.date.message}</p>
-                    )}
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-2 mb-2"><Repeat className="h-4 w-4 text-slate-500"/><label className="text-sm font-medium dark:text-slate-300">Repetir por (meses)</label></div>
+                      <div className="flex gap-2 items-center"><Input type="number" min="1" max="60" {...register('repeat_months')} className="dark:bg-slate-950 w-20" defaultValue="1"/><span className="text-xs text-slate-500">Ex: 6 para contrato semestral. (1 = hoje)</span></div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Categoria *
-                  </label>
-                  <select
-                    {...register('category')}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                  >
-                    <option value="">Selecione uma categoria</option>
-                    {CATEGORIES.map(category => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.category && (
-                    <p className="text-red-600 text-sm mt-1">{errors.category.message}</p>
-                  )}
-                </div>
+                  <div><label className="text-sm font-medium dark:text-slate-300">Observações</label><textarea {...register('notes')} className="w-full p-2 border rounded-md dark:bg-slate-950 dark:border-slate-800 dark:text-white" rows={2}></textarea></div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Observações
-                  </label>
-                  <textarea
-                    {...register('notes')}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
-                    placeholder="Observações adicionais"
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsModalOpen(false);
-                      setEditingTransaction(null);
-                      reset({ type: 'receita', frequency: 'variavel', date: new Date().toISOString().split('T')[0] });
-                    }}
-                    className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 bg-slate-900 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                  >
-                    {editingTransaction ? 'Atualizar' : 'Salvar'}
-                  </button>
-                </div>
+                  <Button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 dark:bg-white dark:text-slate-900 mt-2">{isSubmitting ? <Loader2 className="animate-spin"/> : 'Salvar Lançamento'}</Button>
               </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Filtros */}
-      {isFilterModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full border border-slate-200 dark:border-slate-800">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Filtrar Transações</h2>
-                <button
-                  onClick={() => setIsFilterModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Tipo
-                  </label>
-                  <select
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value as TransactionTypeFilter)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                  >
-                    <option value="all">Todos</option>
-                    <option value="receita">Receita</option>
-                    <option value="despesa">Despesa</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Frequência
-                  </label>
-                  <select
-                    value={frequencyFilter}
-                    onChange={(e) => setFrequencyFilter(e.target.value as TransactionFrequencyFilter)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
-                  >
-                    <option value="all">Todas</option>
-                    <option value="fixa">Fixa</option>
-                    <option value="variavel">Variável</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-6 border-t border-slate-100 dark:border-slate-800 mt-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTypeFilter('all');
-                    setFrequencyFilter('all');
-                    setIsFilterModalOpen(false);
-                  }}
-                  className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                >
-                  Limpar Filtros
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsFilterModalOpen(false)}
-                  className="flex-1 bg-slate-900 text-white px-4 py-2 rounded-lg hover:shadow-lg hover:bg-slate-800 transition-all dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                >
-                  Aplicar Filtros
-                </button>
-              </div>
-            </div>
-          </div>
+           </div>
         </div>
       )}
     </div>

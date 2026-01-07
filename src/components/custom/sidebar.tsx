@@ -6,28 +6,22 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { getInitials } from '@/lib/utils';
 import {
-  LayoutDashboard, Users, CheckSquare, DollarSign,
-  BarChart2, Zap, PieChart, Briefcase, Folder,
-  Target, Bell, Users2, Settings, LogOut,
-  ChevronLeft, ChevronRight, BarChart3, Megaphone // <--- AGORA ESTÁ INCLUSO
+  LayoutDashboard, Users, DollarSign,
+  BarChart2, PieChart, Briefcase, Folder,
+  Users2, Settings, LogOut,
+  ChevronLeft, ChevronRight, BarChart3, Megaphone
 } from 'lucide-react';
 
-// O restante do seu código continua...
-
-// Configuração dos itens do menu
+// Configuração dos itens do menu (REMOVIDOS: Tarefas, Produtividade, Metas, Alertas)
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Clientes', href: '/clients', icon: Users },
+  { name: 'Clientes', href: '/clients', icon: Users }, // Agora é o HUB CENTRAL
   { name: 'CRM', href: '/crm', icon: Megaphone },
-  { name: 'Tarefas', href: '/tasks', icon: CheckSquare },
   { name: 'Financeiro', href: '/finances', icon: DollarSign },
   { name: 'DRE', href: '/dre', icon: BarChart2 },
-  { name: 'Produtividade', href: '/productivity', icon: Zap },
   { name: 'Dashboards', href: '/dashboards', icon: PieChart },
   { name: 'Projetos Freelancer', href: '/freelancer-projects', icon: Briefcase },
-  { name: 'Documentos', href: '/documents', icon: Folder },
-  { name: 'Metas', href: '/goals', icon: Target },
-  { name: 'Alertas', href: '/alerts', icon: Bell },
+  { name: 'Documentos', href: '/documents', icon: Folder }, // Docs gerais
   { name: 'Equipe', href: '/team', icon: Users2 },
   { name: 'Configurações', href: '/settings', icon: Settings },
 ];
@@ -72,7 +66,7 @@ export function Sidebar() {
       {/* Navegação */}
       <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700">
         {navigation.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
           return (

@@ -1,89 +1,49 @@
 import { createServerClient } from '@supabase/ssr';
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { type EmailOtpType } from '@supabase/supabase-js';
+import { NextResponse, type NextRequest } from 'next/server';
 
-export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  
-  // Captura os parâmetros novos
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
   const token_hash = searchParams.get('token_hash');
-  const type = searchParams.get('type');
+  const type = searchParams.get('type') as EmailOtpType | null;
   const next = searchParams.get('next') ?? '/dashboard';
-  
-  // Captura o code antigo (caso algum link velho seja clicado)
-  const code = searchParams.get('code');
 
-  console.log(`🔄 Callback | Hash: ${!!token_hash} | Code: ${!!code} | Type: ${type}`);
+  const redirectTo = request.nextUrl.clone();
+  redirectTo.pathname = next;
+  redirectTo.searchParams.delete('token_hash');
+  redirectTo.searchParams.delete('type');
+  redirectTo.searchParams.delete('next');
 
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch (err) { console.warn("Cookie error:", err) }
-        },
-      },
-    }
-  );
-
-  // CASO 1: Link Novo (Invite/Recovery sem cookie)
   if (token_hash && type) {
-    console.log("🔑 Usando verifyOtp com token_hash...");
-    
-    const { error } = await supabase.auth.verifyOtp({
-        type: type as any,
-        token_hash: token_hash,
-    });
+    const cookieStore = {
+      getAll() { return request.cookies.getAll() },
+      setAll(cookiesToSet: any[]) {
+        cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+      },
+    };
 
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: cookieStore,
+      }
+    );
+
+    const { error } = await supabase.auth.verifyOtp({ type, token_hash });
+    
     if (!error) {
-        console.log("✅ Sucesso (verifyOtp)! Redirecionando...");
-        return NextResponse.redirect(`${origin}${next}`);
-    } else {
-        console.error("❌ Erro verifyOtp:", error.message);
-        return NextResponse.redirect(`${origin}/login?error=otp_failed`);
+      const response = NextResponse.redirect(redirectTo);
+      // Hack necessário para persistir cookie no Next.js Server Components
+      const newCookies = (cookieStore as any).cookiesToSet || [];
+      newCookies.forEach(({ name, value, options }: any) => 
+        response.cookies.set(name, value, options)
+      );
+      return response;
     }
   }
 
-  // CASO 2: Login Social ou Link Padrão (Requer Cookie PKCE)
-  if (code) {
-    console.log("🌐 Usando exchangeCodeForSession...");
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
-    } else {
-        // Se falhar o code normal, tenta um "resgate" assumindo que o code é um hash
-        // Isso salva links antigos ou mal formatados
-        console.warn("⚠️ Falha no code exchange. Tentando resgate como Invite/Recovery...");
-        
-        const { error: rescueError } = await supabase.auth.verifyOtp({
-            token_hash: code,
-            type: 'invite' // Tenta adivinhar que é convite
-        });
-
-        if (!rescueError) {
-             return NextResponse.redirect(`${origin}${next}`);
-        }
-        
-        // Se falhar, tenta recuperação
-        const { error: rescueRecovery } = await supabase.auth.verifyOtp({
-            token_hash: code,
-            type: 'recovery'
-        });
-
-        if (!rescueRecovery) {
-             return NextResponse.redirect(`${origin}${next}`);
-        }
-    }
-  }
-
-  // Falha Total
-  return NextResponse.redirect(`${origin}/login?error=auth_failed`);
+  // Erro? Manda pro login
+  redirectTo.pathname = '/login';
+  return NextResponse.redirect(redirectTo);
 }
