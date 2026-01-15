@@ -202,7 +202,6 @@ function ClientsView() {
 
         if (editingClient) {
             await supabase.from('clients').update(payload).eq('id', editingClient.id);
-            
             const today = new Date().toISOString();
             await supabase.from('transactions')
                 .delete()
@@ -678,6 +677,19 @@ function TasksView() {
     setIsModalOpen(false); fetchData(); reset(); toast({ title: "Tarefa salva" });
   };
 
+  // --- FUNÇÃO DE EXCLUSÃO CORRIGIDA ---
+  const handleDeleteTask = async (taskId: string) => {
+      if(!confirm("Tem certeza que deseja excluir esta tarefa?")) return;
+      try {
+          const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+          if (error) throw error;
+          setTasks(prev => prev.filter(t => t.id !== taskId));
+          toast({ title: "Tarefa excluída" });
+      } catch (error) {
+          toast({ title: "Erro ao excluir", variant: "destructive" });
+      }
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
@@ -730,7 +742,6 @@ function TasksView() {
       saveColumns(newCols);
   };
 
-  // Resto do código original de Tasks...
   const openEditModal = (task: any) => {
       setEditingTask(task); setActiveTab('details');
       reset({
@@ -804,7 +815,7 @@ function TasksView() {
                         <div key={col.id} className="min-w-[280px]">
                             <KanbanColumn id={col.id} title={col.title} color={col.color} tasks={tasksByStatus[col.id] || []}>
                                 {(tasksByStatus[col.id] || []).map((task: any) => (
-                                    <SortableTaskCard key={task.id} task={task} clientName={task.client_name} getPriorityColor={getPriorityColor} openEditModal={openEditModal} deleteTask={() => {}} />
+                                    <SortableTaskCard key={task.id} task={task} clientName={task.client_name} getPriorityColor={getPriorityColor} openEditModal={openEditModal} deleteTask={() => handleDeleteTask(task.id)} />
                                 ))}
                             </KanbanColumn>
                         </div>
@@ -826,6 +837,7 @@ function TasksView() {
                             <span className={`px-2 py-1 rounded text-xs ${getPriorityColor(t.priority)}`}>{t.priority}</span>
                             <span className="text-xs bg-slate-100 px-2 py-1 rounded">{columns.find(c => c.id === t.status)?.title || t.status}</span>
                             <Button variant="outline" size="sm" onClick={() => openEditModal(t)}>Editar</Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(t.id)}><Trash2 className="h-4 w-4 text-red-500"/></Button>
                         </div>
                     </div>
                 ))}
