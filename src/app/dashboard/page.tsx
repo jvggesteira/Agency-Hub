@@ -26,24 +26,25 @@ interface Client {
   contract_value: number | null;
   created_at: string;
   contract_start_date: string | null;
+  status: string; // Adicionado para filtrar ativos/inativos
 }
 
 type DateRangeOption = '7d' | '14d' | '30d' | '90d' | '180d' | '1y' | 'custom';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [allClients, setAllClients] = useState<Client[]>([]); 
+  const [allClients, setAllClients] = useState<Client[]>([]);
   
   // Estado do Filtro
   const [dateRange, setDateRange] = useState<DateRangeOption>('30d');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-
+  
   // Estado da Meta
   const [mrrTarget, setMrrTarget] = useState(15000);
   const [isEditingTarget, setIsEditingTarget] = useState(false);
   const [tempTarget, setTempTarget] = useState('');
-
+  
   // Estados para as métricas
   const [metrics, setMetrics] = useState({
     clientsCurrent: 0,
@@ -53,7 +54,7 @@ export default function DashboardPage() {
     clientsPrevious: 0,
     mrrPrevious: 0
   });
-
+  
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
   useEffect(() => {
@@ -71,10 +72,10 @@ export default function DashboardPage() {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      // 1. Busca Clientes
+      // 1. Busca Clientes (INCLUINDO STATUS)
       const { data: clients, error } = await supabase
         .from('clients')
-        .select('id, name, contract_value, created_at, contract_start_date')
+        .select('id, name, contract_value, created_at, contract_start_date, status')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -85,7 +86,7 @@ export default function DashboardPage() {
         .select('target_value')
         .eq('key', 'mrr_target')
         .single();
-      
+
       if (goalData) {
         setMrrTarget(Number(goalData.target_value));
       }
@@ -93,7 +94,7 @@ export default function DashboardPage() {
       if (clients) {
         setAllClients(clients);
         
-        // Simula atividades
+        // Simula atividades (baseado nos clientes recém criados)
         const activities = clients.slice(0, 5).map(client => ({
           id: client.id,
           type: 'new_client',
@@ -169,9 +170,17 @@ export default function DashboardPage() {
   const calculateMetrics = (clients: Client[]) => {
     const { start, end, prevStart, prevEnd } = getDates();
 
-    // --- CÁLCULO 1: CLIENTES ---
-    const activeClientsNow = clients.filter(c => new Date(c.created_at) <= end).length;
-    const activeClientsPrev = clients.filter(c => new Date(c.created_at) <= prevEnd).length;
+    // --- CÁLCULO 1: CLIENTES (APENAS ATIVOS) ---
+    // Filtra clientes criados até a data final E que estão ativos hoje
+    const activeClientsNow = clients.filter(c => 
+        new Date(c.created_at) <= end && c.status === 'active'
+    ).length;
+
+    // Para comparação histórica, assumimos status ativo no passado baseado na data de criação
+    // (Aprimoramento ideal seria ter tabela de histórico de status, mas isso resolve 90%)
+    const activeClientsPrev = clients.filter(c => 
+        new Date(c.created_at) <= prevEnd && c.status === 'active'
+    ).length;
 
     let clientsGrowth = 0;
     if (activeClientsPrev > 0) {
@@ -180,13 +189,13 @@ export default function DashboardPage() {
       clientsGrowth = 100;
     }
 
-    // --- CÁLCULO 2: MRR ---
+    // --- CÁLCULO 2: MRR (APENAS ATIVOS) ---
     const currentMRR = clients
-        .filter(c => new Date(c.created_at) <= end)
+        .filter(c => new Date(c.created_at) <= end && c.status === 'active')
         .reduce((acc, c) => acc + (c.contract_value || 0), 0);
 
     const previousMRR = clients
-        .filter(c => new Date(c.created_at) <= prevEnd)
+        .filter(c => new Date(c.created_at) <= prevEnd && c.status === 'active')
         .reduce((acc, c) => acc + (c.contract_value || 0), 0);
 
     let mrrGrowth = 0;
@@ -288,7 +297,7 @@ export default function DashboardPage() {
                 {/* CARD 1: BASE DE CLIENTES ATIVOS */}
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">Total de Clientes</h3>
+                    <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">Total de Clientes (Ativos)</h3>
                     <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
                       <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                     </div>
@@ -380,7 +389,7 @@ export default function DashboardPage() {
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                             title="Editar Meta"
                         >
-                            <Edit2 className="h-4 w-4" />
+                          <Edit2 className="h-4 w-4" />
                         </button>
                     </div>
                   )}
