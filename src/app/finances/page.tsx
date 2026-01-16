@@ -6,7 +6,7 @@ import { Header } from '@/components/custom/header';
 import { supabase } from '@/lib/supabase';
 import { 
   DollarSign, TrendingUp, TrendingDown, Filter, Loader2, ArrowUpRight, ArrowDownRight, Search, Plus, X, Trash2, Calendar, Repeat, MoreHorizontal,
-  CreditCard, QrCode, Barcode, Banknote // Ícones novos importados
+  CreditCard, QrCode, Barcode, Banknote, CheckCircle2, Circle
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
@@ -18,6 +18,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
+// --- CORREÇÃO AQUI: Removemos o .default('done') para evitar conflito de tipos ---
 const transactionSchema = z.object({
   description: z.string().min(1, 'Descrição obrigatória'),
   amount: z.string().min(1, 'Valor obrigatório'),
@@ -25,7 +26,8 @@ const transactionSchema = z.object({
   category: z.string().min(1, 'Categoria obrigatória'),
   customCategory: z.string().optional(),
   classification: z.enum(['fixo', 'variavel']),
-  payment_method: z.string().optional(), // Novo campo no schema
+  payment_method: z.string().optional(),
+  status: z.enum(['done', 'pending']), // Apenas o enum, sem default aqui
   date: z.string().min(1, 'Data obrigatória'),
   repeat_months: z.string().optional(),
   notes: z.string().optional(),
@@ -41,7 +43,8 @@ interface Transaction {
   date: string;
   category: string;
   classification: 'fixo' | 'variavel';
-  payment_method?: string; // Novo campo na interface
+  payment_method?: string;
+  status: 'done' | 'pending';
   installment_number?: number;
   installment_total?: number;
   group_id?: string;
@@ -63,17 +66,24 @@ export default function FinancesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Novos Filtros
-  const [filterType, setFilterType] = useState('all'); // all, income, expense
-  const [filterClass, setFilterClass] = useState('all'); // all, fixo, variavel
+  const [filterType, setFilterType] = useState('all');
+  const [filterClass, setFilterClass] = useState('all');
 
-  const [metrics, setMetrics] = useState({ income: 0, expenses: 0, balance: 0 });
-  
+  const [metrics, setMetrics] = useState({ income: 0, expenses: 0, balance: 0, pending: 0 });
+
   const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
-    defaultValues: { type: 'expense', classification: 'variavel', payment_method: 'pix', date: new Date().toISOString().split('T')[0], repeat_months: '1' }
+    // O valor padrão é definido AQUI, o que resolve o erro de tipagem
+    defaultValues: { 
+        type: 'expense', 
+        classification: 'variavel', 
+        payment_method: 'pix', 
+        status: 'done', 
+        date: new Date().toISOString().split('T')[0], 
+        repeat_months: '1' 
+    }
   });
 
-  const selectedCategory = watch('category');
   const selectedType = watch('type');
 
   useEffect(() => { fetchFinancialData(); }, [selectedMonth, selectedYear]);
@@ -101,11 +111,13 @@ export default function FinancesPage() {
           date: t.date,
           category: t.category,
           classification: t.classification || 'variavel',
-          payment_method: t.payment_method || 'pix', // Mapeando forma de pagamento
+          payment_method: t.payment_method || 'pix',
+          status: t.status || 'done',
           installment_number: t.installment_number || 1,
           installment_total: t.installment_total || 1,
           group_id: t.group_id
       }));
+
       setTransactions(formatted);
       calculateMetrics(formatted);
 
@@ -117,9 +129,45 @@ export default function FinancesPage() {
   };
 
   const calculateMetrics = (data: Transaction[]) => {
-    const income = data.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
-    const expenses = data.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
-    setMetrics({ income, expenses, balance: income - expenses });
+    // Apenas transações 'done' (pagas/realizadas) contam para o saldo
+    const realized = data.filter(t => t.status === 'done');
+    
+    const income = realized.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
+    const expenses = realized.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+    
+    // Total pendente (futuro ou a pagar)
+    const pending = data.filter(t => t.status === 'pending').reduce((acc, t) => acc + t.amount, 0);
+
+    setMetrics({ income, expenses, balance: income - expenses, pending });
+  };
+
+  const toggleStatus = async (t: Transaction) => {
+    const newStatus = t.status === 'done' ? 'pending' : 'done';
+    
+    // Otimistic Update
+    const updatedTransactions = transactions.map(tr => 
+        tr.id === t.id ? { ...tr, status: newStatus } : tr
+    );
+    // Cast forçado para garantir compatibilidade
+    setTransactions(updatedTransactions as Transaction[]);
+    calculateMetrics(updatedTransactions as Transaction[]);
+
+    try {
+        const { error } = await supabase
+            .from('transactions')
+            .update({ status: newStatus })
+            .eq('id', t.id);
+
+        if (error) throw error;
+        
+        toast({ 
+            title: newStatus === 'done' ? "Marcado como Pago" : "Marcado como Pendente",
+            className: newStatus === 'done' ? "bg-green-600 text-white" : ""
+        });
+    } catch (error) {
+        toast({ title: "Erro ao atualizar", variant: "destructive" });
+        fetchFinancialData(); // Reverte em caso de erro
+    }
   };
 
   const onSubmit = async (data: TransactionFormData) => {
@@ -130,17 +178,22 @@ export default function FinancesPage() {
           const groupId = repeat > 1 ? crypto.randomUUID() : null;
 
           const transactionsToInsert = [];
+
           for (let i = 0; i < repeat; i++) {
               const dateObj = new Date(data.date);
               dateObj.setMonth(dateObj.getMonth() + i);
               
+              // O primeiro segue o status do form. Os repetidos (futuros) nascem como pendente.
+              const currentStatus = (i === 0) ? data.status : 'pending';
+
               transactionsToInsert.push({
                   description: data.description,
                   amount: numericAmount,
                   type: data.type,
                   category: finalCategory,
                   classification: data.classification,
-                  payment_method: data.payment_method || 'pix', // Salvando forma de pagamento
+                  payment_method: data.payment_method || 'pix',
+                  status: currentStatus,
                   date: dateObj.toISOString(),
                   notes: data.notes,
                   group_id: groupId,
@@ -151,9 +204,10 @@ export default function FinancesPage() {
 
           const { error } = await supabase.from('transactions').insert(transactionsToInsert);
           if(error) throw error;
-          
+
           toast({ title: repeat > 1 ? `${repeat} lançamentos gerados!` : "Lançamento salvo!" });
           setIsModalOpen(false); reset(); fetchFinancialData();
+
       } catch (error: any) {
           toast({ title: "Erro", description: error.message, variant: "destructive" });
       }
@@ -187,13 +241,12 @@ export default function FinancesPage() {
   const months = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
   const years = [2024, 2025, 2026, 2027];
 
-  // Helper para ícones de pagamento
   const getPaymentIcon = (method: string) => {
       switch (method) {
           case 'cartao': return <CreditCard className="h-4 w-4 text-purple-500" />;
           case 'boleto': return <Barcode className="h-4 w-4 text-slate-500" />;
           case 'dinheiro': return <Banknote className="h-4 w-4 text-green-600" />;
-          default: return <QrCode className="h-4 w-4 text-blue-500" />; // PIX padrão
+          default: return <QrCode className="h-4 w-4 text-blue-500" />;
       }
   };
 
@@ -232,15 +285,15 @@ export default function FinancesPage() {
             <>
               <div className="grid gap-6 md:grid-cols-3 mb-8">
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Receitas</span><div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg"><TrendingUp className="h-5 w-5 text-green-600" /></div></div>
+                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Receitas (Realizadas)</span><div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg"><TrendingUp className="h-5 w-5 text-green-600" /></div></div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.income)}</h2>
                 </div>
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Despesas</span><div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg"><TrendingDown className="h-5 w-5 text-red-600" /></div></div>
+                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Despesas (Pagas)</span><div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg"><TrendingDown className="h-5 w-5 text-red-600" /></div></div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.expenses)}</h2>
                 </div>
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Saldo</span><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg"><DollarSign className="h-5 w-5 text-blue-600" /></div></div>
+                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Saldo (Realizado)</span><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg"><DollarSign className="h-5 w-5 text-blue-600" /></div></div>
                     <h2 className={`text-2xl font-bold ${metrics.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(metrics.balance)}</h2>
                 </div>
               </div>
@@ -254,9 +307,8 @@ export default function FinancesPage() {
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"/>
                             <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent dark:text-white"/>
                         </div>
-                    </div>
+                  </div>
                
-                    {/* NOVOS FILTROS */}
                     <div className="flex gap-2">
                         <select value={filterType} onChange={e => setFilterType(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Todas</option><option value="income">Receitas</option><option value="expense">Despesas</option></select>
                         <select value={filterClass} onChange={e => setFilterClass(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Tudo</option><option value="fixo">Fixo</option><option value="variavel">Variável</option></select>
@@ -267,6 +319,7 @@ export default function FinancesPage() {
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800 sticky top-0">
                             <tr>
+                                <th className="px-6 py-3 w-10">Status</th>
                                 <th className="px-6 py-3">Descrição</th>
                                 <th className="px-6 py-3">Classificação</th>
                                 <th className="px-6 py-3">Categoria</th>
@@ -277,17 +330,29 @@ export default function FinancesPage() {
                         </thead>
                         <tbody>
                             {filteredTransactions.length === 0 ? (
-                                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-500">Nenhum lançamento encontrado.</td></tr>
+                                <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500">Nenhum lançamento encontrado.</td></tr>
                             ) : (
                                 filteredTransactions.map((t) => (
-                                    <tr key={t.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 group">
+                                    <tr key={t.id} className={`border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 group ${t.status === 'pending' ? 'opacity-70' : ''}`}>
+                                        <td className="px-6 py-4">
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); toggleStatus(t); }}
+                                                className={`h-6 w-6 rounded-full flex items-center justify-center border transition-all ${
+                                                    t.status === 'done'
+                                                    ? 'bg-green-500 border-green-500 text-white hover:bg-green-600'
+                                                    : 'bg-transparent border-slate-300 text-transparent hover:border-yellow-500 hover:text-yellow-500'
+                                                }`}
+                                                title={t.status === 'done' ? "Pago (Clique para desmarcar)" : "Pendente (Clique para dar baixa)"}
+                                            >
+                                                <CheckCircle2 className="h-4 w-4" />
+                                            </button>
+                                        </td>
                                         <td className="px-6 py-4 font-medium text-slate-900 dark:text-white flex items-center gap-3">
                                             <div className={`p-1.5 rounded-full ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                                                 {t.type === 'income' ? <ArrowUpRight className="h-3 w-3"/> : <ArrowDownRight className="h-3 w-3"/>}
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2">
-                                                    {/* Ícone da forma de pagamento */}
                                                     <div title={t.payment_method}>
                                                         {getPaymentIcon(t.payment_method || 'pix')}
                                                     </div>
@@ -311,7 +376,7 @@ export default function FinancesPage() {
                                             {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                             <DropdownMenu>
+                                            <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <button className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100">
                                                         <MoreHorizontal className="h-4 w-4"/>
@@ -335,7 +400,7 @@ export default function FinancesPage() {
                         </tbody>
                     </table>
                 </div>
-               </div>
+              </div>
             </>
           )}
         </main>
@@ -344,12 +409,41 @@ export default function FinancesPage() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
            <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800 shadow-2xl overflow-y-auto max-h-[90vh]">
-              <div className="flex justify-between mb-6">
+               <div className="flex justify-between mb-6">
                   <h2 className="text-xl font-bold dark:text-white">Novo Lançamento</h2>
                   <button onClick={() => setIsModalOpen(false)}><X className="dark:text-white"/></button>
               </div>
               
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                  {/* SELEÇÃO DE STATUS DO LANÇAMENTO */}
+                  <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <label className="text-sm font-medium dark:text-slate-300">Status do Lançamento</label>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setValue('status', 'done')}
+                                className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${
+                                    watch('status') === 'done' 
+                                    ? 'bg-green-600 text-white border-green-600 shadow-sm' 
+                                    : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'
+                                }`}
+                            >
+                                ✅ PAGO / REALIZADO
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setValue('status', 'pending')}
+                                className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${
+                                    watch('status') === 'pending' 
+                                    ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm' 
+                                    : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'
+                                }`}
+                            >
+                                ⏳ PENDENTE / AGENDADO
+                            </button>
+                        </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                       <button type="button" onClick={() => setValue('type', 'income')} className={`py-3 rounded-lg border font-medium flex items-center justify-center gap-2 transition-all ${selectedType === 'income' ? 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}><ArrowUpRight className="h-4 w-4"/> Receita</button>
                       <button type="button" onClick={() => setValue('type', 'expense')} className={`py-3 rounded-lg border font-medium flex items-center justify-center gap-2 transition-all ${selectedType === 'expense' ? 'bg-red-100 border-red-500 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}><ArrowDownRight className="h-4 w-4"/> Despesa</button>
@@ -358,11 +452,10 @@ export default function FinancesPage() {
                   <div><label className="text-sm font-medium dark:text-slate-300">Descrição</label><Input {...register('description')} placeholder="Ex: Salário, Contrato X" className="dark:bg-slate-950"/></div>
                   
                   <div className="grid grid-cols-2 gap-4">
-                      <div><label className="text-sm font-medium dark:text-slate-300">Valor (R$)</label><Input {...register('amount')} placeholder="0,00" className="dark:bg-slate-950"/></div>
+                     <div><label className="text-sm font-medium dark:text-slate-300">Valor (R$)</label><Input {...register('amount')} placeholder="0,00" className="dark:bg-slate-950"/></div>
                       <div><label className="text-sm font-medium dark:text-slate-300">Data de Pagamento</label><Input type="date" {...register('date')} className="dark:bg-slate-950"/></div>
                   </div>
 
-                  {/* NOVO CAMPO DE FORMA DE PAGAMENTO */}
                   <div className="grid grid-cols-2 gap-4">
                       <div>
                           <label className="text-sm font-medium dark:text-slate-300">Categoria</label>

@@ -23,11 +23,13 @@ interface Transaction {
   description: string;
   date: string;
   status: string; 
+  client_name?: string; 
 }
 
 interface Client {
   id: string;
   name: string;
+  company?: string;
 }
 
 interface DetailGroup {
@@ -87,7 +89,7 @@ export default function DrePage() {
 
   const fetchInitialData = async () => {
     try {
-      const { data } = await supabase.from('clients').select('id, name').order('name');
+      const { data } = await supabase.from('clients').select('id, name, company').order('name');
       if (data) setClients(data);
       
       const monthKey = `${selectedMonth}-${selectedYear}`;
@@ -104,23 +106,24 @@ export default function DrePage() {
       const start = new Date(Number(selectedYear), Number(selectedMonth) - 1, 1);
       const end = new Date(Number(selectedYear), Number(selectedMonth), 0, 23, 59, 59);
 
+      // Busca transações com JOIN no cliente para pegar o nome da empresa
       let query = supabase
         .from('transactions')
-        .select('*')
+        .select('*, clients(name, company)')
         .gte('date', start.toISOString())
         .lte('date', end.toISOString());
 
       const { data: transactions, error } = await query;
       if (error) throw error;
 
-      const txs = (transactions as Transaction[]) || [];
+      const txs = (transactions as any[]) || [];
 
       // Inicializa variáveis
       let grossRevenue = 0;
       let variableCosts = 0;
       let fixedCosts = 0;
       let financialResult = 0;
-      let taxesValues = 0;
+      let taxesValues = 0; 
 
       const grossRevenueDetails: DetailGroup = {};
       const variableCostsDetails: DetailGroup = {};
@@ -133,56 +136,62 @@ export default function DrePage() {
       };
 
       txs.forEach(t => {
+          // 1. Filtro de Cliente
           if (selectedClient !== 'all' && t.client_id !== selectedClient) {
               if (t.client_id) return; 
               return;
           }
 
-          // --- CORREÇÃO DA LÓGICA DE FILTRO ---
-          // 1. Receitas: Só conta se estiver PAGO ('done' ou 'paid')
-          // 2. Despesas: Conta TODAS que estão no mês (assume que manual = realizado)
-          
-          let shouldCount = false;
-          if (t.type === 'income') {
-              shouldCount = t.status === 'done' || t.status === 'paid';
-          } else {
-              // Se for despesa, sempre conta (já filtramos pela data na query do banco)
-              shouldCount = true;
-          }
+          // 2. Filtro de Regime de Caixa
+          const isPaid = t.status === 'done' || t.status === 'paid';
+          if (!isPaid) return; 
 
-          if (!shouldCount) return; 
-
-          const val = Math.abs(Number(t.amount)); // Garante valor positivo
+          const val = Math.abs(Number(t.amount)); 
           
           const categoryName = t.category || 'Outros';
           const catLower = categoryName.toLowerCase();
-          const classLower = (t.classification || '').toLowerCase(); 
+          const classLower = (t.classification || '').toLowerCase();
           const typeLower = (t.type || '').toLowerCase();
+
+          // Pega o nome correto (Empresa ou Nome)
+          const clientName = t.clients?.company || t.clients?.name || 'Cliente';
 
           if (typeLower === 'income') {
               // --- RECEITAS ---
               grossRevenue += val;
-              const incomeKey = t.description.startsWith('Contrato:') ? t.description : categoryName;
+              
+              let incomeKey = t.description;
+
+              // Lógica de Exibição na DRE:
+              if (incomeKey.startsWith('Contrato:')) {
+                  // Se for contrato recorrente, agrupa pelo nome da Empresa/Cliente
+                  incomeKey = `Contrato: ${clientName}`;
+              } else if (t.category === 'Vendas') {
+                  // Se for venda avulsa, usa a DESCRIÇÃO exata do lançamento.
+                  // Se tiver cliente vinculado, coloca entre parênteses para contexto.
+                  if (clientName !== 'Cliente') {
+                      incomeKey = `${t.description} (${clientName})`;
+                  } else {
+                      incomeKey = t.description;
+                  }
+              }
+              
               addToGroup(grossRevenueDetails, incomeKey, val);
 
           } else if (typeLower === 'expense') {
               // --- DESPESAS ---
               
-              // 1. Impostos
               if (catLower.includes('imposto')) {
                   taxesValues += val;
               } 
-              // 2. Financeiro
               else if (['juros', 'multa', 'tarifa', 'bancario', 'bancário'].some(term => catLower.includes(term))) {
                   financialResult += val;
                   addToGroup(financialResultDetails, categoryName, val);
               } 
-              // 3. Variável (Procura 'var' na classificação)
               else if (classLower.includes('var')) {
                   variableCosts += val;
                   addToGroup(variableCostsDetails, categoryName, val);
               } 
-              // 4. Fixo (O resto vai pra cá, inclusive 'Outros')
               else {
                   fixedCosts += val;
                   addToGroup(fixedCostsDetails, categoryName, val);
@@ -190,7 +199,17 @@ export default function DrePage() {
           }
       });
 
-      const calculatedTax = taxesValues > 0 ? taxesValues : (grossRevenue * (taxRate / 100));
+      // --- CÁLCULO DE IMPOSTO ---
+      let calculatedTax = 0;
+      if (taxRate > 0) {
+          calculatedTax = grossRevenue * (taxRate / 100);
+          if (taxesValues > 0) {
+              fixedCosts += taxesValues;
+              addToGroup(fixedCostsDetails, 'Impostos/Taxas Diversas (Manuais)', taxesValues);
+          }
+      } else {
+          calculatedTax = taxesValues;
+      }
       
       const netRevenue = grossRevenue - calculatedTax;
       const contributionMargin = netRevenue - variableCosts;
@@ -242,13 +261,13 @@ export default function DrePage() {
           
           <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
              <div>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">DRE Gerencial Detalhado</h1>
+               <h1 className="text-3xl font-bold text-slate-900 dark:text-white">DRE Gerencial</h1>
               <p className="text-slate-600 dark:text-slate-400 mt-1">
-                  Receita (Regime de Caixa) vs Despesas (Competência/Lançamento).
+                  Visão baseada em Regime de Caixa (apenas transações realizadas/pagas).
               </p>
             </div>
             
-            <div className="flex flex-wrap gap-2 items-center bg-white dark:bg-slate-900 p-2 rounded-lg border shadow-sm">
+           <div className="flex flex-wrap gap-2 items-center bg-white dark:bg-slate-900 p-2 rounded-lg border shadow-sm">
                 <Filter className="h-4 w-4 text-slate-500 ml-2" />
                 <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none border-r pr-2 dark:text-white dark:bg-slate-900 cursor-pointer">
                     {Array.from({length: 12}, (_, i) => i + 1).map(m => (
@@ -261,7 +280,7 @@ export default function DrePage() {
                     <option value="2026">2026</option>
                 </select>
                 <select value={selectedClient} onChange={(e) => setSelectedClient(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none max-w-[150px] dark:text-white dark:bg-slate-900 cursor-pointer">
-                    <option value="all">Consolidado (Todos)</option>
+                     <option value="all">Consolidado (Todos)</option>
                     {clients.map(client => (
                         <option key={client.id} value={client.id}>{client.name}</option>
                     ))}
@@ -313,7 +332,7 @@ export default function DrePage() {
 
               <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
                  <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 grid grid-cols-12 text-sm font-semibold text-slate-600 dark:text-slate-400">
-                    <div className="col-span-8">Descrição</div>
+                   <div className="col-span-8">Descrição</div>
                     <div className="col-span-2 text-right">Valor</div>
                     <div className="col-span-2 text-right text-xs">% RB</div>
                  </div>
@@ -335,7 +354,7 @@ export default function DrePage() {
                         </div>
                         <div className="col-span-2 text-right text-red-500 font-medium">{formatCurrency(dre.taxes)}</div>
                         <div className="col-span-2 text-right text-slate-400">{getPercent(dre.taxes, dre.grossRevenue)}</div>
-                    </div>
+                   </div>
 
                     <div className="p-3 grid grid-cols-12 items-center bg-blue-50/50 dark:bg-blue-900/10 font-semibold border-y border-blue-100 dark:border-blue-900/30">
                         <div className="col-span-8 pl-4 text-blue-800 dark:text-blue-300">(=) Receita Líquida</div>
@@ -394,7 +413,7 @@ export default function DrePage() {
 
                 <div className="flex items-center gap-2 p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 text-sm">
                     <AlertCircle className="h-4 w-4"/>
-                    <span><strong>Atenção:</strong> Receitas são exibidas apenas quando RECEBIDAS. Despesas são exibidas conforme a data de competência (lançamento).</span>
+                    <span><strong>Atenção:</strong> A DRE considera apenas lançamentos marcados como "Realizados" ou "Pagos" na aba Financeiro.</span>
                 </div>
 
             </div>
@@ -414,7 +433,6 @@ function ExpandableDRERow({ label, value, details, totalRevenue, type, bold = fa
         if (type === 'negative') return 'text-red-500';
         return 'text-slate-900 dark:text-white';
     };
-
     return (
         <div className="border-b border-slate-50 dark:border-slate-800/50">
             <div 
@@ -437,7 +455,7 @@ function ExpandableDRERow({ label, value, details, totalRevenue, type, bold = fa
 
             {expanded && hasDetails && (
                 <div className="bg-slate-50/50 dark:bg-slate-900/50 shadow-inner">
-                    {Object.entries(details).sort(([,a], [,b]) => (b as number) - (a as number)).map(([cat, val], idx) => (
+                     {Object.entries(details).sort(([,a], [,b]) => (b as number) - (a as number)).map(([cat, val], idx) => (
                         <div key={idx} className="grid grid-cols-12 py-2 px-3 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
                             <div className="col-span-8 pl-12 flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600"></span>

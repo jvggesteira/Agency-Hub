@@ -22,13 +22,13 @@ const projectSchema = z.object({
   description: z.string().optional(),
   notes: z.string().optional(),
 });
-
 type ProjectFormData = z.infer<typeof projectSchema>;
 type ProjectStatusFilter = 'all' | 'em_andamento' | 'concluido' | 'cancelado';
 
 interface Client {
   id: string;
   name: string;
+  company?: string;
 }
 
 interface Project {
@@ -42,7 +42,7 @@ interface Project {
   description?: string;
   notes?: string;
   created_at: string;
-  client?: { name: string };
+  client?: { name: string; company?: string };
 }
 
 export default function FreelancerProjectsPage() {
@@ -56,7 +56,6 @@ export default function FreelancerProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<ProjectStatusFilter>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
-
   const {
     register,
     handleSubmit,
@@ -76,9 +75,8 @@ export default function FreelancerProjectsPage() {
     try {
       const { data: projectsData, error: projError } = await supabase
         .from('projects')
-        .select('*, client:clients(name)')
+        .select('*, client:clients(name, company)')
         .order('created_at', { ascending: false });
-      
       if (projError) throw projError;
 
       const mappedProjects: Project[] = (projectsData || []).map(p => ({
@@ -96,9 +94,8 @@ export default function FreelancerProjectsPage() {
       }));
       setProjects(mappedProjects);
 
-      const { data: clientsData } = await supabase.from('clients').select('id, name').order('name');
+      const { data: clientsData } = await supabase.from('clients').select('id, name, company').order('name');
       setClients(clientsData || []);
-
     } catch (error) {
       console.error('Erro:', error);
       toast({ title: "Erro", description: "Falha ao carregar dados.", variant: "destructive" });
@@ -107,7 +104,6 @@ export default function FreelancerProjectsPage() {
     }
   };
 
-  // Lógica de Formatação de Moeda ao Digitar (Igual Clientes)
   const handleCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => {
       let value = e.target.value.replace(/\D/g, "");
       value = (Number(value) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -116,10 +112,7 @@ export default function FreelancerProjectsPage() {
 
   const onSubmit = async (data: ProjectFormData) => {
     try {
-      // CORREÇÃO DE VALOR: Limpa tudo que não é número e divide por 100 (infalível)
-      // Ex: "R$ 2.000,00" -> 200000 -> 2000.00
       const costValue = parseFloat(data.value.replace(/[^\d]/g, "")) / 100;
-
       const payload = {
         name: data.name,
         client_id: data.clientId,
@@ -130,17 +123,13 @@ export default function FreelancerProjectsPage() {
         description: data.description,
         notes: data.notes
       };
-
       if (editingProject) {
         await supabase.from('projects').update(payload).eq('id', editingProject.id);
         toast({ title: "Sucesso", description: "Projeto atualizado." });
       } else {
-        // Criar Novo Projeto
         const { error: projError } = await supabase.from('projects').insert([payload]);
         if (projError) throw projError;
 
-        // --- AUTOMAÇÃO FINANCEIRA CORRIGIDA ---
-        // Agora usa o schema NOVO da tabela transactions (classification, category)
         if (costValue > 0) {
             const { error: transError } = await supabase
                 .from('transactions')
@@ -148,13 +137,12 @@ export default function FreelancerProjectsPage() {
                     description: `Projeto: ${data.name} (${data.freelancer})`,
                     amount: costValue,
                     type: 'expense',
-                    classification: 'variavel', // IMPORTANTE: Classifica como Custo Variável para a DRE
-                    category: 'Freelancers',    // Categoria visual
-                    date: new Date().toISOString(), // Competência hoje
-                    client_id: data.clientId,   // Vincula ao cliente para filtro da DRE
-                    status: 'pending'           // Entra como Pendente (A Pagar)
+                    classification: 'variavel', 
+                    category: 'Freelancers',    
+                    date: new Date().toISOString(), 
+                    client_id: data.clientId,   
+                    status: 'pending'           
                 }]);
-
             if (transError) {
                 console.error("Erro ao criar despesa automática:", transError);
                 toast({ title: "Aviso", description: "Projeto salvo, mas erro ao gerar financeiro.", variant: "destructive" });
@@ -170,7 +158,6 @@ export default function FreelancerProjectsPage() {
       setEditingProject(null);
       reset();
       fetchData();
-
     } catch (error: any) {
       console.error("Erro ao salvar:", error);
       toast({ title: "Erro", description: error.message || "Falha ao salvar projeto.", variant: "destructive" });
@@ -193,7 +180,6 @@ export default function FreelancerProjectsPage() {
     setValue('name', project.name);
     setValue('clientId', project.clientId);
     setValue('freelancer', project.freelancer);
-    // Formata o valor vindo do banco para o input (R$)
     setValue('value', parseFloat(project.value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
     setValue('deadline', project.deadline);
     setValue('status', project.status);
@@ -215,7 +201,7 @@ export default function FreelancerProjectsPage() {
 
   const filteredProjects = projects.filter(project => {
     const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (project.client?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (project.client?.company || project.client?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       project.freelancer.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchesSearch) return false;
     const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
@@ -272,7 +258,7 @@ export default function FreelancerProjectsPage() {
                         <div className="w-10 h-10 bg-slate-900 dark:bg-slate-800 rounded-lg flex items-center justify-center"><Briefcase className="h-5 w-5 text-white" /></div>
                         <div>
                           <h3 className="font-semibold text-slate-900 dark:text-white">{project.name}</h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">{project.client?.name || 'Cliente Removido'}</p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">{project.client?.company || project.client?.name || 'Cliente Removido'}</p>
                         </div>
                       </div>
                       <div className="flex gap-1">
@@ -312,12 +298,11 @@ export default function FreelancerProjectsPage() {
                   <label className="text-sm font-medium dark:text-slate-300">Cliente *</label>
                   <select {...register('clientId')} className="w-full px-3 py-2 border rounded-lg dark:bg-slate-950 dark:border-slate-700">
                     <option value="">Selecione...</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.company ? c.company : c.name}</option>)}
                   </select>
                 </div>
                 <div><label className="text-sm font-medium dark:text-slate-300">Freelancer *</label><input {...register('freelancer')} className="w-full px-3 py-2 border rounded-lg dark:bg-slate-950 dark:border-slate-700" placeholder="Nome" /></div>
                 
-                {/* VALOR COM MÁSCARA */}
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="text-sm font-medium dark:text-slate-300">Valor *</label>
@@ -350,7 +335,7 @@ export default function FreelancerProjectsPage() {
             <h2 className="text-xl font-semibold mb-4 dark:text-white">Filtrar</h2>
             <div className="space-y-4">
                 <div><label className="text-sm dark:text-slate-300">Status</label><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as ProjectStatusFilter)} className="w-full px-3 py-2 border rounded-lg dark:bg-slate-950"><option value="all">Todos</option><option value="em_andamento">Em Andamento</option><option value="concluido">Concluído</option></select></div>
-                <div><label className="text-sm dark:text-slate-300">Cliente</label><select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg dark:bg-slate-950"><option value="all">Todos</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                <div><label className="text-sm dark:text-slate-300">Cliente</label><select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg dark:bg-slate-950"><option value="all">Todos</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select></div>
             </div>
             <div className="flex gap-3 mt-6">
                 <button onClick={() => {setStatusFilter('all'); setClientFilter('all'); setIsFilterModalOpen(false);}} className="flex-1 border rounded-lg py-2 dark:text-white">Limpar</button>

@@ -6,7 +6,7 @@ import { Header } from '@/components/custom/header';
 import { 
   Search, Plus, Mail, Phone, Building, FileText, Folder, Upload, Download, Trash2, Clock, DollarSign, X, Edit, AlertCircle, Loader2, FolderPlus, ChevronLeft, CornerUpLeft,
   CheckSquare, Calendar, User, Target, Bell, LayoutGrid, List, MessageSquare, Send, Filter, TrendingUp, TrendingDown, Activity, Users, AlertTriangle, Info, Zap, RefreshCw,
-  CheckCircle, Percent, Wallet, PieChart, Settings, ArrowUp, ArrowDown
+  CheckCircle, Percent, Wallet, PieChart, Settings, ArrowUp, ArrowDown, HelpCircle, Save, CalendarDays
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -42,7 +42,6 @@ const clientSchema = z.object({
   contractStartDate: z.string().min(1, "Início obrigatório"),
   notes: z.string().optional(),
 });
-
 type ClientFormData = z.infer<typeof clientSchema>;
 const DEFAULT_FOLDERS = ['Contratos', 'Briefing', 'Tráfego Pago', 'Orgânico', 'Geral'];
 
@@ -50,7 +49,6 @@ function ClientsView() {
   const { can } = usePermission();
   const [clients, setClients] = useState<any[]>([]);
   const [financialStatus, setFinancialStatus] = useState<any>({});
-  
   const [monthlyStats, setMonthlyStats] = useState({ expected: 0, paid: 0, overdue: 0, open: 0 });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -64,7 +62,6 @@ function ClientsView() {
   
   const [subProjects, setSubProjects] = useState<string[]>([]);
   const [newSubProject, setNewSubProject] = useState('');
-
   const [logs, setLogs] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
@@ -74,7 +71,6 @@ function ClientsView() {
   const { register, handleSubmit, reset, setValue, watch, formState: { isSubmitting } } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema), defaultValues: { status: 'active', contractDuration: '12', feeType: 'fixed' }
   });
-
   const feeType = watch('feeType');
 
   useEffect(() => { fetchClients(); }, []);
@@ -83,7 +79,6 @@ function ClientsView() {
     setLoading(true);
     const { data: clientsData } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
     
-    // Check-in Financeiro
     const today = new Date();
     const startMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
     const endMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString();
@@ -93,7 +88,7 @@ function ClientsView() {
         .eq('type', 'income')
         .gte('date', startMonth)
         .lte('date', endMonth);
-
+    
     const statusMap: any = {};
     const activeClientIds = new Set(clientsData?.filter((c: any) => c.status === 'active').map((c: any) => c.id) || []);
     
@@ -101,6 +96,7 @@ function ClientsView() {
     let totalPaid = 0;
     let totalOverdue = 0;
     let totalOpen = 0;
+    
     const todayNormalized = new Date(); todayNormalized.setHours(0,0,0,0);
 
     if (transactions) {
@@ -108,7 +104,6 @@ function ClientsView() {
             if (!statusMap[t.client_id] || t.status === 'paid' || t.status === 'done') {
                 statusMap[t.client_id] = { status: t.status, date: t.date, txId: t.id };
             }
-            // Dashboard Lógica (Só ativos)
             if (activeClientIds.has(t.client_id)) {
                 const amount = Number(t.amount || 0);
                 totalExpected += amount;
@@ -123,7 +118,7 @@ function ClientsView() {
     }
     setFinancialStatus(statusMap);
     setMonthlyStats({ expected: totalExpected, paid: totalPaid, overdue: totalOverdue, open: totalOpen });
-
+    
     if (clientsData) {
         setClients(clientsData.map((c: any) => ({ 
             ...c, 
@@ -147,12 +142,10 @@ function ClientsView() {
 
   const generateFinancialRecords = async (clientId: string, value: number, duration: number, startDate: string, clientName: string) => {
       if (value <= 0) return;
-      
       const transactions = [];
       const start = new Date(startDate + 'T12:00:00'); // Meio dia para evitar fuso
       const baseDay = start.getDate();
-      const today = new Date();
-      today.setHours(0,0,0,0);
+      const today = new Date(); today.setHours(0,0,0,0);
 
       for (let i = 0; i < duration; i++) {
           const date = new Date(start);
@@ -162,7 +155,6 @@ function ClientsView() {
           const maxDays = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
           if (baseDay > maxDays) date.setDate(maxDays); else date.setDate(baseDay);
 
-          // SÓ GERA SE A DATA FOR FUTURA OU HOJE
           if (date.getTime() >= today.getTime()) {
               transactions.push({
                   description: `Contrato: ${clientName}`,
@@ -208,7 +200,7 @@ function ClientsView() {
                 .eq('client_id', editingClient.id)
                 .eq('status', 'pending')
                 .gte('date', today);
-
+            
             if (rawValue > 0 && data.status === 'active') {
                 await generateFinancialRecords(editingClient.id, rawValue, duration, data.contractStartDate, displayName);
             }
@@ -272,11 +264,13 @@ function ClientsView() {
       }
   };
   const handleRemoveSubProject = (idx: number) => { setSubProjects(subProjects.filter((_, i) => i !== idx)); };
+
   const handleCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => {
       let value = e.target.value.replace(/\D/g, "");
       value = (Number(value) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
       setValue('value', value);
   };
+
   const stats = useMemo(() => {
       const activeClients = clients.filter(c => c.status === 'active');
       const totalActive = activeClients.length;
@@ -287,14 +281,16 @@ function ClientsView() {
       const minFee = values.length > 0 ? Math.min(...values) : 0;
       return { totalActive, avgTicket, maxFee, minFee, totalRevenue };
   }, [clients]);
-  
+
   const fetchClientDetails = async (clientId: string, contractUrl?: string) => {
     const { data: logsData } = await supabase.from('client_logs').select('*').eq('client_id', clientId).order('created_at', { ascending: false });
     if (logsData) setLogs(logsData);
     const prefix = `client_${clientId}/`;
     const { data: files } = await supabase.storage.from('contracts').list(prefix, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
+    
     const loadedDocs: any[] = [];
     const foundFolders = new Set<string>();
+    
     if (files) {
         files.forEach(file => {
             const parts = file.name.split('___');
@@ -312,6 +308,7 @@ function ClientsView() {
     setCustomFolders(Array.from(foundFolders).filter(f => !DEFAULT_FOLDERS.includes(f)));
     setCurrentFolder(null);
   };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0] || !editingClient) return;
     const targetFolder = currentFolder || 'Geral'; setUploading(true); const file = e.target.files[0];
@@ -324,12 +321,13 @@ function ClientsView() {
         toast({ title: "Arquivo enviado!" });
     } catch { toast({ title: "Erro no upload", variant: "destructive" }); } finally { setUploading(false); }
   };
+
   const handleCreateFolder = () => {
       const name = prompt("Nome da pasta:");
       if(name && !DEFAULT_FOLDERS.includes(name) && !customFolders.includes(name)) setCustomFolders([...customFolders, name]);
   };
   const allFolders = [...DEFAULT_FOLDERS, ...customFolders];
-  
+
   const renderPaymentStatus = (clientId: string) => {
       const statusData = financialStatus[clientId];
       if (!statusData) return <span className="text-xs text-slate-400 italic">Sem cobrança</span>;
@@ -349,6 +347,7 @@ function ClientsView() {
           );
       }
   };
+
   const filteredClients = clients.filter(c => {
       const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.company && c.company.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
@@ -440,7 +439,6 @@ function ClientsView() {
                             </div>
                         </div>
                         
-                        {/* VISUALIZAÇÃO DE CONTRATO (RESTAURADA) */}
                         <div className="flex items-center gap-2 text-xs">
                             <Calendar className="h-4 w-4 text-blue-500"/>
                             <span>{client.contract_duration} meses</span>
@@ -531,10 +529,11 @@ function ClientsView() {
                                 <div className="flex justify-end pt-4"><Button type="submit" disabled={isSubmitting}>{isSubmitting ? <Loader2 className="animate-spin"/> : 'Salvar'}</Button></div>
                             </form>
                         )}
-                        {/* Outras abas mantidas */}
+                        
                         {editingClient && activeTab === 'historico' && (
                             <div className="space-y-4">{logs.map(log => (<div key={log.id} className="border-l-2 pl-4 ml-2 border-slate-300"><p className="text-xs text-slate-400">{new Date(log.created_at).toLocaleString()}</p><p className="text-sm">{log.content}</p></div>))}</div>
                         )}
+                       
                         {editingClient && activeTab === 'docs' && (
                             <div>
                                 <div className="flex justify-between mb-4">
@@ -582,27 +581,26 @@ function ClientsView() {
 }
 
 // ==================================================================================
-// --- 2. VIEW TAREFAS (COM COLUNAS DINÂMICAS) ---
+// --- 2. VIEW TAREFAS (COM COLUNAS DINÂMICAS E PRAZOS) ---
 // ==================================================================================
 
 const taskSchema = z.object({
   title: z.string().min(1, 'Título é obrigatório'),
   description: z.string().optional(),
   priority: z.enum(['baixa', 'media', 'alta']),
-  status: z.string().min(1, "Status obrigatório"), // Mudado para string para permitir colunas dinâmicas
+  status: z.string().min(1, "Status obrigatório"),
   dueDate: z.string().optional(),
   assignedTo: z.string().optional(),
   clientId: z.string().optional(),
   subProject: z.string().optional(),
 });
-
 type TaskFormData = z.infer<typeof taskSchema>;
 
 const DEFAULT_COLUMNS = [
-  { id: 'pendente', title: 'Pendente', color: 'bg-slate-400' },
-  { id: 'em_andamento', title: 'Em Andamento', color: 'bg-blue-500' },
-  { id: 'concluida', title: 'Concluída', color: 'bg-green-500' },
-  { id: 'cancelada', title: 'Cancelada', color: 'bg-red-500' },
+  { id: 'pendente', title: 'Pendente', color: 'bg-slate-400', description: 'Tarefas aguardando início.' },
+  { id: 'em_andamento', title: 'Em Andamento', color: 'bg-blue-500', description: 'Tarefas sendo executadas no momento.' },
+  { id: 'concluida', title: 'Concluída', color: 'bg-green-500', description: 'Tarefas finalizadas e entregues.' },
+  { id: 'cancelada', title: 'Cancelada', color: 'bg-red-500', description: 'Tarefas que não serão mais realizadas.' },
 ];
 
 function TasksView() {
@@ -611,17 +609,17 @@ function TasksView() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [isColumnsModalOpen, setIsColumnsModalOpen] = useState(false); // NOVO
+  const [isColumnsModalOpen, setIsColumnsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<any | null>(null);
   
-  // Colunas Dinâmicas
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
   const [newColumnTitle, setNewColumnTitle] = useState('');
+  const [newColumnDesc, setNewColumnDesc] = useState('');
+  const [editingColumn, setEditingColumn] = useState<any | null>(null); // Para editar nome/descrição da coluna
 
   const [clients, setClients] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [availableSubProjects, setAvailableSubProjects] = useState<string[]>([]);
-
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -632,17 +630,17 @@ function TasksView() {
   const [clientFilter, setClientFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [subProjectFilter, setSubProjectFilter] = useState('all');
-
+  const [deadlineFilter, setDeadlineFilter] = useState('all'); // Novo filtro de prazo
+  
   const { register, handleSubmit, reset, watch, setValue } = useForm<TaskFormData>({ resolver: zodResolver(taskSchema) });
   const selectedClientId = watch('clientId');
-
+  
   useEffect(() => { 
       fetchData(); 
-      // Carregar colunas do localStorage
       const savedCols = localStorage.getItem('kanban-columns');
       if (savedCols) setColumns(JSON.parse(savedCols));
   }, []);
-
+  
   useEffect(() => {
       if (selectedClientId) {
           const client = clients.find(c => c.id === selectedClientId);
@@ -654,30 +652,84 @@ function TasksView() {
 
   const fetchData = async () => {
     setLoading(true);
-    // FILTRO DE CLIENTES ATIVOS
     const { data: c } = await supabase.from('clients').select('id, name, company, sub_projects').eq('status', 'active');
     if (c) setClients(c);
     
     const { data: p } = await supabase.from('profiles').select('id, full_name, email');
     if (p) setTeamMembers(p);
-
+    
     const { data: t } = await supabase.from('tasks').select('*, client:clients(name, company), assignee:profiles(full_name)').order('created_at', {ascending:false});
-    if (t) setTasks(t.map((task: any) => ({ ...task, client_name: task.client?.company || task.client?.name, assignee_name: task.assignee?.full_name })));
+    
+    // --- CORREÇÃO IMPORTANTE: Mapear due_date para dueDate ---
+    if (t) setTasks(t.map((task: any) => ({
+         ...task,
+         dueDate: task.due_date, // Mapeamento explícito para o componente
+         client_name: task.client?.company || task.client?.name, 
+         assignee_name: task.assignee?.full_name 
+    })));
+    
     setLoading(false);
   };
 
-  const onSubmit = async (data: TaskFormData) => {
-    const payload = {
-        title: data.title, description: data.description, priority: data.priority, status: data.status,
-        due_date: data.dueDate || null, client_id: data.clientId || null, assignee_id: data.assignedTo || null,
-        sub_project: data.subProject || null
-    };
-    if (editingTask) await supabase.from('tasks').update(payload).eq('id', editingTask.id);
-    else await supabase.from('tasks').insert(payload);
-    setIsModalOpen(false); fetchData(); reset(); toast({ title: "Tarefa salva" });
+  const getTaskDeadlineStatus = (task: any) => {
+      if (!task.dueDate || task.status === 'concluida' || task.status === 'cancelada') return 'on_time';
+      
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      
+      // Corrige string YYYY-MM-DD para garantir hora local
+      let dateStr = task.dueDate;
+      if (!dateStr.includes('T')) dateStr += 'T12:00:00';
+      
+      const due = new Date(dateStr);
+      due.setHours(0,0,0,0);
+
+      if (due < today) return 'overdue';
+      if (due.getTime() === today.getTime()) return 'today';
+      return 'on_time';
   };
 
-  // --- FUNÇÃO DE EXCLUSÃO CORRIGIDA ---
+  const filteredTasks = tasks.filter(t => {
+      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchPriority = priorityFilter === 'all' || t.priority === priorityFilter;
+      const matchClient = clientFilter === 'all' || t.client_id === clientFilter;
+      const matchAssignee = assigneeFilter === 'all' || t.assignee_id === assigneeFilter;
+      const matchSubProject = subProjectFilter === 'all' || t.sub_project === subProjectFilter;
+      
+      const deadlineStatus = getTaskDeadlineStatus(t);
+      const matchDeadline = deadlineFilter === 'all' 
+          || (deadlineFilter === 'overdue' && deadlineStatus === 'overdue')
+          || (deadlineFilter === 'today' && deadlineStatus === 'today')
+          || (deadlineFilter === 'on_time' && deadlineStatus === 'on_time');
+
+      return matchSearch && matchPriority && matchClient && matchAssignee && matchSubProject && matchDeadline;
+  });
+
+  const tasksByStatus = filteredTasks.reduce((acc, t) => { acc[t.status] = acc[t.status] || []; acc[t.status].push(t); return acc; }, {} as any);
+
+  const stats = {
+      total: filteredTasks.length,
+      overdue: tasks.filter(t => getTaskDeadlineStatus(t) === 'overdue').length // Contagem global de atrasadas para o alerta
+  };
+
+  const onSubmit = async (data: TaskFormData) => {
+    // --- CORREÇÃO IMPORTANTE: Garantir que a data vazia vá como null e com T12:00:00 ---
+    const finalDate = data.dueDate ? `${data.dueDate}T12:00:00` : null;
+
+    const payload = {
+        title: data.title, description: data.description, priority: data.priority, status: data.status,
+        due_date: finalDate, // Garante envio correto para o banco
+        client_id: data.clientId || null, assignee_id: data.assignedTo || null,
+        sub_project: data.subProject || null
+    };
+
+    if (editingTask) await supabase.from('tasks').update(payload).eq('id', editingTask.id);
+    else await supabase.from('tasks').insert(payload);
+    
+    setIsModalOpen(false); fetchData(); reset();
+    toast({ title: "Tarefa salva" });
+  };
+
   const handleDeleteTask = async (taskId: string) => {
       if(!confirm("Tem certeza que deseja excluir esta tarefa?")) return;
       try {
@@ -696,15 +748,12 @@ function TasksView() {
     const taskId = active.id as string;
     const newStatus = over.id as string;
     
-    // Verifica se a coluna de destino existe
     if (!columns.some(c => c.id === newStatus)) return;
-
     if (active.data.current?.sortable.containerId === newStatus) return;
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
     await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
   };
 
-  // Funções de Colunas
   const saveColumns = (newCols: any[]) => {
       setColumns(newCols);
       localStorage.setItem('kanban-columns', JSON.stringify(newCols));
@@ -713,12 +762,20 @@ function TasksView() {
   const addColumn = () => {
       if (!newColumnTitle.trim()) return;
       const id = newColumnTitle.toLowerCase().replace(/\s+/g, '_');
-      // Evita duplicatas
       if (columns.some(c => c.id === id)) { toast({ title: "Coluna já existe" }); return; }
-      
-      const newCols = [...columns, { id, title: newColumnTitle, color: 'bg-slate-200' }];
+      const newCols = [...columns, { id, title: newColumnTitle, color: 'bg-slate-200', description: newColumnDesc }];
       saveColumns(newCols);
       setNewColumnTitle('');
+      setNewColumnDesc('');
+  };
+
+  const updateColumn = () => {
+      if (!editingColumn || !newColumnTitle.trim()) return;
+      const newCols = columns.map(c => c.id === editingColumn.id ? { ...c, title: newColumnTitle, description: newColumnDesc } : c);
+      saveColumns(newCols);
+      setEditingColumn(null);
+      setNewColumnTitle('');
+      setNewColumnDesc('');
   };
 
   const removeColumn = (id: string) => {
@@ -743,10 +800,24 @@ function TasksView() {
   };
 
   const openEditModal = (task: any) => {
-      setEditingTask(task); setActiveTab('details');
+      setEditingTask(task);
+      setActiveTab('details');
+      
+      // Na edição, precisamos pegar apenas a parte YYYY-MM-DD da data ISO para o input type="date" funcionar
+      let formattedDate = '';
+      if (task.dueDate) {
+         // Se for ISO completo
+         if (task.dueDate.includes('T')) {
+             formattedDate = task.dueDate.split('T')[0];
+         } else {
+             formattedDate = task.dueDate;
+         }
+      }
+
       reset({
           title: task.title, description: task.description || '', priority: task.priority, status: task.status,
-          dueDate: task.due_date || '', assignedTo: task.assignee_id || '', clientId: task.client_id || '', subProject: task.sub_project || ''
+          dueDate: formattedDate,
+          assignedTo: task.assignee_id || '', clientId: task.client_id || '', subProject: task.sub_project || ''
       });
       fetchComments(task.id); setIsModalOpen(true);
   };
@@ -762,22 +833,6 @@ function TasksView() {
       setNewComment(''); fetchComments(editingTask.id);
   };
 
-  const filteredTasks = tasks.filter(t => {
-      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchPriority = priorityFilter === 'all' || t.priority === priorityFilter;
-      const matchClient = clientFilter === 'all' || t.client_id === clientFilter;
-      const matchAssignee = assigneeFilter === 'all' || t.assignee_id === assigneeFilter;
-      const matchSubProject = subProjectFilter === 'all' || t.sub_project === subProjectFilter;
-      return matchSearch && matchPriority && matchClient && matchAssignee && matchSubProject;
-  });
-
-  const tasksByStatus = filteredTasks.reduce((acc, t) => { acc[t.status] = acc[t.status] || []; acc[t.status].push(t); return acc; }, {} as any);
-  const stats = {
-      total: filteredTasks.length,
-      pendente: filteredTasks.filter(t => t.status === 'pendente').length,
-      concluida: filteredTasks.filter(t => t.status === 'concluida').length,
-  };
-
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'alta': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
@@ -789,9 +844,24 @@ function TasksView() {
 
   const allSubProjects = Array.from(new Set(tasks.map(t => t.sub_project).filter(Boolean)));
 
+  const getDeadlineBadge = (task: any) => {
+      const status = getTaskDeadlineStatus(task);
+      if (status === 'overdue') return <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200"><AlertCircle className="h-3 w-3"/> Atrasada</span>;
+      if (status === 'today') return <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded border border-amber-200"><Clock className="h-3 w-3"/> Vence Hoje</span>;
+      return null;
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in zoom-in duration-300">
         
+        {/* BANNER DE ATRASO */}
+        {stats.overdue > 0 && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 rounded-lg flex items-center gap-3 text-red-700 dark:text-red-300">
+                <AlertCircle className="h-5 w-5" />
+                <span className="text-sm font-medium">Atenção: Você tem <strong>{stats.overdue}</strong> tarefas atrasadas!</span>
+            </div>
+        )}
+
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border dark:border-slate-800 flex flex-col md:flex-row gap-4 justify-between items-center">
             <div className="flex items-center gap-2 w-full md:w-auto flex-1">
                 <Search className="h-4 w-4 text-slate-400"/>
@@ -813,7 +883,7 @@ function TasksView() {
                 <div className="flex gap-4 overflow-x-auto min-h-[500px] pb-4">
                     {columns.map(col => (
                         <div key={col.id} className="min-w-[280px]">
-                            <KanbanColumn id={col.id} title={col.title} color={col.color} tasks={tasksByStatus[col.id] || []}>
+                            <KanbanColumn id={col.id} title={col.title} color={col.color} description={col.description} tasks={tasksByStatus[col.id] || []}>
                                 {(tasksByStatus[col.id] || []).map((task: any) => (
                                     <SortableTaskCard key={task.id} task={task} clientName={task.client_name} getPriorityColor={getPriorityColor} openEditModal={openEditModal} deleteTask={() => handleDeleteTask(task.id)} />
                                 ))}
@@ -825,11 +895,12 @@ function TasksView() {
         ) : (
             <div className="space-y-2">
                 {filteredTasks.map(t => (
-                    <div key={t.id} className="p-4 bg-white dark:bg-slate-900 border rounded flex justify-between items-center">
+                    <div key={t.id} className="p-4 bg-white dark:bg-slate-900 border rounded flex justify-between items-center group hover:shadow-sm transition-all">
                         <div>
                              <div className="flex items-center gap-2">
                                 <h4 className="font-bold">{t.title}</h4>
                                 {t.sub_project && <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 border dark:border-slate-700">{t.sub_project}</span>}
+                                {getDeadlineBadge(t)}
                              </div>
                             <p className="text-sm text-slate-500">{t.client_name} - {t.assignee_name}</p>
                         </div>
@@ -844,7 +915,7 @@ function TasksView() {
             </div>
         )}
 
-        {/* MODAL NOVA TAREFA */}
+        {/* MODAL NOVA TAREFA (Campos Restaurados) */}
         {isModalOpen && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full flex flex-col border dark:border-slate-800 shadow-2xl">
@@ -867,7 +938,7 @@ function TasksView() {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-sm">Cliente</label>
-                                        <select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-950 dark:border-slate-700">
+                                        <select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">
                                             <option value="">Selecione...</option>
                                             {clients.map(c => (
                                                 <option key={c.id} value={c.id}>{c.company ? c.company : c.name}</option>
@@ -876,7 +947,7 @@ function TasksView() {
                                     </div>
                                     <div>
                                         <label className="text-sm">Frente / Sub-Projeto</label>
-                                        <select {...register('subProject')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-950 dark:border-slate-700" disabled={availableSubProjects.length === 0}>
+                                        <select {...register('subProject')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700" disabled={availableSubProjects.length === 0}>
                                             <option value="">{availableSubProjects.length > 0 ? 'Selecione...' : 'Nenhuma frente'}</option>
                                             {availableSubProjects.map(sp => <option key={sp} value={sp}>{sp}</option>)}
                                         </select>
@@ -886,18 +957,18 @@ function TasksView() {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-sm">Responsável</label>
-                                        <select {...register('assignedTo')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-950 dark:border-slate-700">
+                                        <select {...register('assignedTo')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">
                                             <option value="">Selecione...</option>
                                             {teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
                                         </select>
                                     </div>
-                                    <div><label className="text-sm">Prioridade</label><select {...register('priority')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-950 dark:border-slate-700"><option value="media">Média</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></div>
+                                    <div><label className="text-sm">Prioridade</label><select {...register('priority')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="media">Média</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                      <div><label className="text-sm">Prazo</label><Input type="date" {...register('dueDate')}/></div>
                                      <div>
                                          <label className="text-sm">Status</label>
-                                         <select {...register('status')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-950 dark:border-slate-700">
+                                         <select {...register('status')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">
                                              {columns.map(col => (
                                                  <option key={col.id} value={col.id}>{col.title}</option>
                                              ))}
@@ -907,7 +978,7 @@ function TasksView() {
                                 <Button className="w-full bg-slate-900 text-white mt-4" type="submit">Salvar</Button>
                             </form>
                         </div>
-                        {/* --- AQUI ESTÁ A ALTERAÇÃO DE DATA/HORA --- */}
+                        
                         <div className={activeTab === 'comments' ? 'block space-y-4' : 'hidden'}>
                             <div className="h-48 overflow-y-auto space-y-2">
                                 {comments.map(c => (
@@ -938,16 +1009,34 @@ function TasksView() {
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800 shadow-xl">
                     <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Gerenciar Colunas</h3><button onClick={() => setIsColumnsModalOpen(false)}><X/></button></div>
                     
-                    <div className="flex gap-2 mb-4">
-                        <Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Nova Coluna..." className="dark:bg-slate-950"/>
-                        <Button onClick={addColumn} size="sm"><Plus className="h-4 w-4"/></Button>
-                    </div>
+                    {!editingColumn ? (
+                        <div className="flex flex-col gap-2 mb-6 bg-slate-50 p-3 rounded-lg border">
+                            <h4 className="text-xs font-bold uppercase text-slate-500">Nova Coluna</h4>
+                            <Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-950 h-8 text-sm"/>
+                            <textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição (opcional)" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-950" />
+                            <Button onClick={addColumn} size="sm" className="w-full"><Plus className="h-4 w-4 mr-2"/> Adicionar</Button>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-2 mb-6 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                            <h4 className="text-xs font-bold uppercase text-blue-600">Editando Coluna</h4>
+                            <Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-950 h-8 text-sm"/>
+                            <textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-950" />
+                            <div className="flex gap-2">
+                                <Button onClick={() => { setEditingColumn(null); setNewColumnTitle(''); setNewColumnDesc(''); }} variant="outline" size="sm" className="flex-1">Cancelar</Button>
+                                <Button onClick={updateColumn} size="sm" className="flex-1"><Save className="h-4 w-4 mr-2"/> Salvar</Button>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="space-y-2 max-h-[300px] overflow-y-auto">
                         {columns.map((col, idx) => (
-                            <div key={col.id} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-800 rounded border dark:border-slate-700">
-                                <span className="text-sm font-medium">{col.title}</span>
-                                <div className="flex gap-1">
+                            <div key={col.id} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-800 rounded border dark:border-slate-700 group">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">{col.title}</span>
+                                    {col.description && <span className="text-[10px] text-slate-400 truncate max-w-[150px]">{col.description}</span>}
+                                </div>
+                                <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => { setEditingColumn(col); setNewColumnTitle(col.title); setNewColumnDesc(col.description || ''); }} className="p-1 hover:bg-slate-200 rounded text-slate-500"><Edit className="h-3 w-3"/></button>
                                     <button onClick={() => moveColumn(idx, 'up')} disabled={idx === 0} className="p-1 hover:bg-slate-200 rounded disabled:opacity-30"><ArrowUp className="h-3 w-3"/></button>
                                     <button onClick={() => moveColumn(idx, 'down')} disabled={idx === columns.length - 1} className="p-1 hover:bg-slate-200 rounded disabled:opacity-30"><ArrowDown className="h-3 w-3"/></button>
                                     <button onClick={() => removeColumn(col.id)} className="p-1 text-red-500 hover:bg-red-100 rounded ml-1"><Trash2 className="h-3 w-3"/></button>
@@ -964,19 +1053,25 @@ function TasksView() {
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
                     <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Filtros Avançados</h3><button onClick={() => setIsFilterModalOpen(false)}><X /></button></div>
                     <div className="space-y-3">
-                        <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todas Prioridades</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
-                        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos Clientes</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select>
-                        <select value={subProjectFilter} onChange={e => setSubProjectFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todas as Frentes</option>{allSubProjects.map(sp => <option key={sp} value={sp}>{sp}</option>)}</select>
-                        <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos Responsáveis</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select>
+                        <select value={deadlineFilter} onChange={e => setDeadlineFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700 bg-red-50 text-red-900 font-medium">
+                            <option value="all">Situação do Prazo: Todos</option>
+                            <option value="overdue">🚨 Atrasadas</option>
+                            <option value="today">⚠️ Vence Hoje</option>
+                            <option value="on_time">✅ No Prazo</option>
+                        </select>
+                        <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Prioridade: Todas</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
+                        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Cliente: Todos</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select>
+                        <select value={subProjectFilter} onChange={e => setSubProjectFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Frente: Todas</option>{allSubProjects.map(sp => <option key={sp} value={sp}>{sp}</option>)}</select>
+                        <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Responsável: Todos</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select>
                     </div>
                     <div className="flex gap-3 mt-6">
-                        <button onClick={() => { setPriorityFilter('all'); setClientFilter('all'); setAssigneeFilter('all'); setSubProjectFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button>
+                        <button onClick={() => { setPriorityFilter('all'); setClientFilter('all'); setAssigneeFilter('all'); setSubProjectFilter('all'); setDeadlineFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button>
                         <button onClick={() => setIsFilterModalOpen(false)} className="flex-1 py-2 bg-blue-600 text-white rounded">Aplicar</button>
                     </div>
                 </div>
             </div>
         )}
-  </div>
+    </div>
   );
 }
 
@@ -1009,16 +1104,14 @@ function GoalsView() {
   const loadData = async () => {
       const savedGoals = localStorage.getItem('goals');
       if (savedGoals) setGoals(JSON.parse(savedGoals));
-      const { data } = await supabase.from('clients').select('id, name');
+      const { data } = await supabase.from('clients').select('id, name, company');
       if (data) setClients(data);
   };
-
   const stats = {
       total: goals.length,
       completed: goals.filter(g => Number(g.currentValue) >= Number(g.targetValue)).length,
       inProgress: goals.filter(g => Number(g.currentValue) < Number(g.targetValue)).length
   };
-
   const onSubmit = (data: GoalFormData) => {
       const newGoal = {
           id: editingGoal?.id || Date.now().toString(),
@@ -1034,7 +1127,6 @@ function GoalsView() {
       localStorage.setItem('goals', JSON.stringify(updatedGoals));
       setIsModalOpen(false); reset(); toast({ title: "Meta salva!" });
   };
-
   const handleDelete = (id: string) => {
       if(!confirm("Excluir?")) return;
       const updated = goals.filter(g => g.id !== id);
@@ -1072,7 +1164,7 @@ function GoalsView() {
               {filteredGoals.length === 0 && <p className="text-slate-500">Nenhuma meta encontrada.</p>}
               {filteredGoals.map(goal => {
                   const progress = Math.min((goal.currentValue / goal.targetValue) * 100, 100);
-                  const clientName = clients.find(c => c.id === goal.clientId)?.name;
+                  const clientName = clients.find(c => c.id === goal.clientId)?.company || clients.find(c => c.id === goal.clientId)?.name;
                   return (
                       <div key={goal.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border dark:border-slate-800 shadow-sm">
                           <div className="flex justify-between mb-2">
@@ -1097,7 +1189,7 @@ function GoalsView() {
                       <h2 className="text-xl font-bold mb-4 dark:text-white">{editingGoal ? 'Editar' : 'Nova Meta'}</h2>
                       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                           <div><label className="text-sm dark:text-slate-300">Título</label><Input {...register('title')} className="dark:bg-slate-900"/></div>
-                          <div><label className="text-sm dark:text-slate-300">Cliente</label><select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:text-white"><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                          <div><label className="text-sm dark:text-slate-300">Cliente</label><select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:text-white"><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select></div>
                           <div className="grid grid-cols-2 gap-4">
                               <div><label className="text-sm dark:text-slate-300">Alvo</label><Input {...register('targetValue')} className="dark:bg-slate-900"/></div>
                               <div><label className="text-sm dark:text-slate-300">Atual</label><Input {...register('currentValue')} className="dark:bg-slate-900"/></div>
@@ -1121,7 +1213,7 @@ function GoalsView() {
                         <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Filtrar Metas</h3><button onClick={() => setIsFilterModalOpen(false)}><X /></button></div>
                         <div className="space-y-3">
                             <label className="text-sm">Cliente</label>
-                            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos Clientes</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos Clientes</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select>
                         </div>
                         <div className="flex gap-3 mt-6">
                             <button onClick={() => { setClientFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button>
@@ -1168,7 +1260,7 @@ function AlertsView() {
         fetchClients();
     }, []);
     const fetchClients = async () => {
-        const { data } = await supabase.from('clients').select('id, name');
+        const { data } = await supabase.from('clients').select('id, name, company');
         if (data) setClients(data);
     };
 
@@ -1252,7 +1344,7 @@ function AlertsView() {
                             </div>
                             <div><label className="text-sm dark:text-slate-300">Valor *</label><Input {...register('value')} placeholder="Ex: 50.00" className="dark:bg-slate-900"/></div>
                             
-                            <div><label className="text-sm dark:text-slate-300">Cliente (Opcional)</label><select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:text-white"><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                            <div><label className="text-sm dark:text-slate-300">Cliente (Opcional)</label><select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:text-white"><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select></div>
                             
                             <div>
                                 <label className="text-sm dark:text-slate-300">Tipo de Notificação *</label>
@@ -1284,7 +1376,7 @@ function AlertsView() {
                             <select value={metricFilter} onChange={e => setMetricFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todas</option><option value="cpl">CPL</option><option value="roas">ROAS</option></select>
                             
                             <label className="text-sm">Cliente</label>
-                            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select>
                         </div>
                         <div className="flex gap-3 mt-6">
                             <button onClick={() => { setClientFilter('all'); setMetricFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button>
@@ -1331,7 +1423,18 @@ function ProductivityView() {
         const concluded = filteredTasks.filter(t => t.status === 'concluida').length;
         const pending = filteredTasks.filter(t => t.status === 'pendente' || t.status === 'em_andamento').length;
         const today = new Date();
-        const overdue = filteredTasks.filter(t => t.due_date && new Date(t.due_date) < today && t.status !== 'concluida' && t.status !== 'cancelada').length;
+        // --- LÓGICA DE ATRASO CORRETA ---
+        const overdue = filteredTasks.filter(t => {
+            if (!t.due_date || t.status === 'concluida' || t.status === 'cancelada') return false;
+            // Cria data UTC para comparação correta
+            let dateStr = t.due_date;
+            if (!dateStr.includes('T')) dateStr += 'T12:00:00';
+            const due = new Date(dateStr); due.setHours(0,0,0,0);
+            
+            const now = new Date(); now.setHours(0,0,0,0);
+            return due < now;
+        }).length;
+        
         const completionRate = totalTasks > 0 ? (concluded / totalTasks) * 100 : 0;
         const averageTime = 2.5; 
         const priorityDistribution = filteredTasks.reduce((acc, t) => { acc[t.priority] = (acc[t.priority] || 0) + 1; return acc; }, {} as any);
@@ -1369,7 +1472,8 @@ function ProductivityView() {
                     <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Concluídas</CardTitle><CheckSquare className="h-4 w-4 text-green-500"/></CardHeader>
                     <CardContent><div className="text-2xl font-bold text-green-600">{metrics.concluded}</div><p className="text-xs text-slate-500">Taxa: {metrics.completionRate.toFixed(1)}%</p></CardContent>
                 </Card>
-                <Card className="bg-white dark:bg-slate-900 border dark:border-slate-800">
+                {/* --- CARD DE ATRASADAS NOVO --- */}
+                <Card className="bg-white dark:bg-slate-900 border-l-4 border-l-red-500 shadow-sm border-slate-200 dark:border-slate-800">
                     <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Atrasadas</CardTitle><AlertTriangle className="h-4 w-4 text-red-500"/></CardHeader>
                     <CardContent><div className="text-2xl font-bold text-red-600">{metrics.overdue}</div><p className="text-xs text-slate-500">Atenção imediata</p></CardContent>
                 </Card>
@@ -1400,6 +1504,11 @@ function ProductivityView() {
                                 <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full"><div className="bg-blue-500 h-2 rounded-full" style={{width: `${(metrics.statusDistribution[s]||0)/metrics.totalTasks*100}%`}}></div></div>
                             </div>
                         ))}
+                        {/* --- LINHA MANUAL DE ATRASADAS --- */}
+                        <div>
+                            <div className="flex justify-between text-sm mb-1"><span className="text-red-600 font-bold">Atrasadas (Alerta)</span><span className="text-red-600 font-bold">{metrics.overdue}</span></div>
+                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full"><div className="bg-red-500 h-2 rounded-full" style={{width: `${(metrics.overdue/metrics.totalTasks*100) || 0}%`}}></div></div>
+                        </div>
                     </CardContent>
                 </Card>
             </div>
@@ -1414,7 +1523,7 @@ function ProductivityView() {
 export default function ClientsPage() {
   const { can } = usePermission();
   const [currentView, setCurrentView] = useState<'clients' | 'tasks' | 'goals' | 'alerts' | 'productivity'>('clients');
-
+  
   if (!can('clients', 'view')) {
       return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950">
