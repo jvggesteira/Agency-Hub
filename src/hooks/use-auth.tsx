@@ -31,7 +31,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   
-  // FIX 1: Configuração aprimorada do cliente para persistir a sessão
   const [supabase] = useState(() => 
     createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!, 
@@ -48,7 +47,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const fetchUserProfile = async (supabaseUser: User): Promise<UserProfile | null> => {
     if (!supabaseUser) return null;
-
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
@@ -57,10 +55,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .maybeSingle();
 
       if (error) {
-        console.warn("Erro ao buscar perfil (usando fallback):", error.message);
+        console.warn("Erro ao buscar perfil:", error.message);
       }
 
-      const fullName = profile?.name || supabaseUser.email?.split('@')[0] || 'Admin';
+      const fullName = profile?.name || supabaseUser.email?.split('@')[0] || 'Usuario';
       const nameParts = fullName.split(' ');
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ') || '';
@@ -71,22 +69,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         name: fullName,
         first_name: firstName,
         last_name: lastName,
-        // FIX 2: MUDANÇA DE EMERGÊNCIA
-        // Se não encontrar o perfil no banco, assume que é ADMIN para você não ficar bloqueado
-        role: profile?.role || 'admin', 
+        // CORREÇÃO DE SEGURANÇA: Fallback é 'collaborator', nunca 'admin'
+        role: profile?.role || 'collaborator', 
         permissions: profile?.permissions || {},
       };
-
     } catch (error) {
       console.error("Auth Error (Fallback ativado):", error);
-      // Fallback de segurança para garantir acesso se o banco falhar
       return {
           id: supabaseUser.id,
           email: supabaseUser.email || '',
-          name: 'Admin Temporário',
-          first_name: 'Admin',
+          name: 'Usuario',
+          first_name: 'Usuario',
           last_name: '',
-          role: 'admin', // Força admin em caso de erro crítico
+          role: 'collaborator', // Fallback seguro
           permissions: {}
       };
     }
@@ -113,12 +108,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const initializeAuth = async () => {
       try {
-        // Tenta recuperar sessão do LocalStorage
         const { data: { session } } = await supabase.auth.getSession();
         
         if (mounted) {
           if (session?.user) {
-            console.log("Sessão recuperada:", session.user.email);
             const profile = await fetchUserProfile(session.user);
             setUser(profile);
           } else {
@@ -137,10 +130,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
         if (!mounted) return;
-        console.log("Evento Auth:", event);
-
+        
         if (session?.user) {
-           // Só atualiza se o usuário mudou
            if (!user || user.id !== session.user.id) {
              const profile = await fetchUserProfile(session.user);
              setUser(profile);

@@ -5,10 +5,11 @@ import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
 import { supabase } from '@/lib/supabase';
 import { 
-  Loader2, Filter, TrendingUp, TrendingDown, Save, Edit2, Download, ChevronRight, ChevronDown, AlertCircle
+  Loader2, Filter, TrendingUp, TrendingDown, Save, Edit2, Download, ChevronRight, ChevronDown, AlertCircle, Ban
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { usePermission } from '@/hooks/use-permission';
+import { useAuth } from '@/hooks/use-auth';
 import AccessDenied from '@/components/custom/access-denied';
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -37,6 +38,7 @@ interface DetailGroup {
 }
 
 export default function DrePage() {
+  const { user, isLoading: authLoading } = useAuth();
   const { can } = usePermission();
   const [loading, setLoading] = useState(true);
   
@@ -70,22 +72,7 @@ export default function DrePage() {
     ebitda: 0
   });
 
-  useEffect(() => {
-    fetchInitialData();
-  }, []);
-
-  useEffect(() => {
-    calculateDre();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth, selectedYear, selectedClient, taxRate]);
-
-  if (!can('dre', 'view')) {
-      return (
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-950">
-          <Sidebar /><div className="flex-1 flex flex-col"><Header /><main className="p-6"><AccessDenied /></main></div>
-        </div>
-      );
-  }
+  // --- FUNÇÕES MOVIDAS PARA O TOPO (Correção do Erro de Inicialização) ---
 
   const fetchInitialData = async () => {
     try {
@@ -106,12 +93,16 @@ export default function DrePage() {
       const start = new Date(Number(selectedYear), Number(selectedMonth) - 1, 1);
       const end = new Date(Number(selectedYear), Number(selectedMonth), 0, 23, 59, 59);
 
-      // Busca transações com JOIN no cliente para pegar o nome da empresa
       let query = supabase
         .from('transactions')
         .select('*, clients(name, company)')
         .gte('date', start.toISOString())
         .lte('date', end.toISOString());
+
+      // Filtro de Segurança: Se não for admin, não vê salários
+      if (user?.role !== 'admin') {
+         query = query.neq('category', 'Colaborador');
+      }
 
       const { data: transactions, error } = await query;
       if (error) throw error;
@@ -136,13 +127,13 @@ export default function DrePage() {
       };
 
       txs.forEach(t => {
-          // 1. Filtro de Cliente
+          // Filtro de Cliente
           if (selectedClient !== 'all' && t.client_id !== selectedClient) {
               if (t.client_id) return; 
               return;
           }
 
-          // 2. Filtro de Regime de Caixa
+          // Filtro de Regime de Caixa
           const isPaid = t.status === 'done' || t.status === 'paid';
           if (!isPaid) return; 
 
@@ -152,35 +143,21 @@ export default function DrePage() {
           const catLower = categoryName.toLowerCase();
           const classLower = (t.classification || '').toLowerCase();
           const typeLower = (t.type || '').toLowerCase();
-
-          // Pega o nome correto (Empresa ou Nome)
           const clientName = t.clients?.company || t.clients?.name || 'Cliente';
 
           if (typeLower === 'income') {
               // --- RECEITAS ---
               grossRevenue += val;
-              
               let incomeKey = t.description;
-
-              // Lógica de Exibição na DRE:
               if (incomeKey.startsWith('Contrato:')) {
-                  // Se for contrato recorrente, agrupa pelo nome da Empresa/Cliente
                   incomeKey = `Contrato: ${clientName}`;
               } else if (t.category === 'Vendas') {
-                  // Se for venda avulsa, usa a DESCRIÇÃO exata do lançamento.
-                  // Se tiver cliente vinculado, coloca entre parênteses para contexto.
-                  if (clientName !== 'Cliente') {
-                      incomeKey = `${t.description} (${clientName})`;
-                  } else {
-                      incomeKey = t.description;
-                  }
+                  incomeKey = clientName !== 'Cliente' ? `${t.description} (${clientName})` : t.description;
               }
-              
               addToGroup(grossRevenueDetails, incomeKey, val);
 
           } else if (typeLower === 'expense') {
               // --- DESPESAS ---
-              
               if (catLower.includes('imposto')) {
                   taxesValues += val;
               } 
@@ -199,7 +176,7 @@ export default function DrePage() {
           }
       });
 
-      // --- CÁLCULO DE IMPOSTO ---
+      // Cálculo do Imposto
       let calculatedTax = 0;
       if (taxRate > 0) {
           calculatedTax = grossRevenue * (taxRate / 100);
@@ -252,6 +229,48 @@ export default function DrePage() {
     }
   }
 
+  // --- EFFECTS (Agora seguros pois as funções já existem) ---
+
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
+
+  useEffect(() => {
+    // Só roda se o usuário estiver carregado e autenticado
+    if (!authLoading && user) {
+        calculateDre();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth, selectedYear, selectedClient, taxRate, user, authLoading]);
+
+  // --- TRAVAS DE RENDERIZAÇÃO (Para evitar crash) ---
+
+  if (authLoading) {
+      return (
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 items-center justify-center">
+            <Loader2 className="animate-spin h-10 w-10 text-blue-600"/>
+        </div>
+      );
+  }
+
+  if (!can('dre', 'view')) {
+      return (
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+          <Sidebar />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header />
+            <main className="flex-1 p-6 flex items-center justify-center">
+                <div className="text-center">
+                    <Ban className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Acesso Negado</h2>
+                    <p className="text-slate-500 mt-2">Você não tem permissão para visualizar a DRE.</p>
+                </div>
+            </main>
+          </div>
+        </div>
+      );
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
       <Sidebar />
@@ -278,6 +297,7 @@ export default function DrePage() {
                     <option value="2024">2024</option>
                     <option value="2025">2025</option>
                     <option value="2026">2026</option>
+                    <option value="2027">2027</option>
                 </select>
                 <select value={selectedClient} onChange={(e) => setSelectedClient(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none max-w-[150px] dark:text-white dark:bg-slate-900 cursor-pointer">
                      <option value="all">Consolidado (Todos)</option>

@@ -6,7 +6,7 @@ import { Header } from '@/components/custom/header';
 import { supabase } from '@/lib/supabase';
 import { 
   DollarSign, TrendingUp, TrendingDown, Filter, Loader2, ArrowUpRight, ArrowDownRight, Search, Plus, X, Trash2, Calendar, Repeat, MoreHorizontal,
-  CreditCard, QrCode, Barcode, Banknote, CheckCircle2, Circle
+  CreditCard, QrCode, Barcode, Banknote, CheckCircle2, Circle, Ban
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
@@ -15,10 +15,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { usePermission } from '@/hooks/use-permission';
+import { useAuth } from '@/hooks/use-auth';
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
-// --- CORREÇÃO AQUI: Removemos o .default('done') para evitar conflito de tipos ---
 const transactionSchema = z.object({
   description: z.string().min(1, 'Descrição obrigatória'),
   amount: z.string().min(1, 'Valor obrigatório'),
@@ -27,7 +28,7 @@ const transactionSchema = z.object({
   customCategory: z.string().optional(),
   classification: z.enum(['fixo', 'variavel']),
   payment_method: z.string().optional(),
-  status: z.enum(['done', 'pending']), // Apenas o enum, sem default aqui
+  status: z.enum(['done', 'pending']),
   date: z.string().min(1, 'Data obrigatória'),
   repeat_months: z.string().optional(),
   notes: z.string().optional(),
@@ -56,6 +57,9 @@ const CATEGORIES = [
 ];
 
 export default function FinancesPage() {
+  const { can } = usePermission();
+  const { user, isLoading: authLoading } = useAuth();
+  
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -73,7 +77,6 @@ export default function FinancesPage() {
 
   const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
-    // O valor padrão é definido AQUI, o que resolve o erro de tipagem
     defaultValues: { 
         type: 'expense', 
         classification: 'variavel', 
@@ -86,20 +89,26 @@ export default function FinancesPage() {
 
   const selectedType = watch('type');
 
-  useEffect(() => { fetchFinancialData(); }, [selectedMonth, selectedYear]);
-
+  // --- 1. DEFINIÇÃO DA FUNÇÃO PRIMEIRO (Para evitar ReferenceError) ---
   const fetchFinancialData = async () => {
     setLoading(true);
     try {
       const start = new Date(selectedYear, selectedMonth, 1);
       const end = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59);
 
-      const { data: dbTransactions, error: txError } = await supabase
+      let query = supabase
         .from('transactions')
         .select('*')
         .gte('date', start.toISOString())
         .lte('date', end.toISOString())
         .order('date', { ascending: false });
+
+      // Filtro de Segurança
+      if (user?.role !== 'admin') {
+          query = query.neq('category', 'Colaborador'); 
+      }
+
+      const { data: dbTransactions, error: txError } = await query;
 
       if (txError) throw txError;
 
@@ -122,6 +131,7 @@ export default function FinancesPage() {
       calculateMetrics(formatted);
 
     } catch (error) {
+      console.error(error);
       toast({ title: "Erro", description: "Falha ao carregar financeiro.", variant: "destructive" });
     } finally {
       setLoading(false);
@@ -129,44 +139,61 @@ export default function FinancesPage() {
   };
 
   const calculateMetrics = (data: Transaction[]) => {
-    // Apenas transações 'done' (pagas/realizadas) contam para o saldo
     const realized = data.filter(t => t.status === 'done');
-    
     const income = realized.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
     const expenses = realized.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
-    
-    // Total pendente (futuro ou a pagar)
     const pending = data.filter(t => t.status === 'pending').reduce((acc, t) => acc + t.amount, 0);
-
     setMetrics({ income, expenses, balance: income - expenses, pending });
   };
 
+  // --- 2. USE EFFECT DEPOIS DA DEFINIÇÃO ---
+  useEffect(() => { 
+      // Só busca se o usuário já carregou
+      if (user && !authLoading) fetchFinancialData(); 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth, selectedYear, user, authLoading]);
+
+  // --- 3. TRAVAS DE RENDERIZAÇÃO ---
+  if (authLoading) {
+      return (
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 items-center justify-center">
+            <Loader2 className="animate-spin h-10 w-10 text-blue-600"/>
+        </div>
+      );
+  }
+
+  // Se não é admin e não tem permissão explicita de view
+  if (user?.role !== 'admin' && !can('finance', 'view')) { 
+      return (
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+          <Sidebar />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header />
+            <main className="flex-1 p-6 flex items-center justify-center">
+                <div className="text-center">
+                    <Ban className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Acesso Negado</h2>
+                    <p className="text-slate-500 mt-2">Você não tem permissão para visualizar o Financeiro.</p>
+                </div>
+            </main>
+          </div>
+        </div>
+      );
+  }
+
+  // ... (Resto das funções toggleStatus, onSubmit, handleDelete, etc. mantidas iguais)
   const toggleStatus = async (t: Transaction) => {
     const newStatus = t.status === 'done' ? 'pending' : 'done';
-    
-    // Otimistic Update
-    const updatedTransactions = transactions.map(tr => 
-        tr.id === t.id ? { ...tr, status: newStatus } : tr
-    );
-    // Cast forçado para garantir compatibilidade
+    const updatedTransactions = transactions.map(tr => tr.id === t.id ? { ...tr, status: newStatus } : tr);
     setTransactions(updatedTransactions as Transaction[]);
     calculateMetrics(updatedTransactions as Transaction[]);
-
     try {
-        const { error } = await supabase
-            .from('transactions')
-            .update({ status: newStatus })
-            .eq('id', t.id);
-
+        const { error } = await supabase.from('transactions').update({ status: newStatus }).eq('id', t.id);
         if (error) throw error;
-        
-        toast({ 
-            title: newStatus === 'done' ? "Marcado como Pago" : "Marcado como Pendente",
-            className: newStatus === 'done' ? "bg-green-600 text-white" : ""
-        });
+        toast({ title: newStatus === 'done' ? "Marcado como Pago" : "Marcado como Pendente", className: newStatus === 'done' ? "bg-green-600 text-white" : "" });
     } catch (error) {
         toast({ title: "Erro ao atualizar", variant: "destructive" });
-        fetchFinancialData(); // Reverte em caso de erro
+        fetchFinancialData(); 
     }
   };
 
@@ -176,38 +203,21 @@ export default function FinancesPage() {
           const numericAmount = parseFloat(data.amount.replace(/[^\d,.-]/g, '').replace(',', '.'));
           const repeat = parseInt(data.repeat_months || '1');
           const groupId = repeat > 1 ? crypto.randomUUID() : null;
-
           const transactionsToInsert = [];
-
           for (let i = 0; i < repeat; i++) {
               const dateObj = new Date(data.date);
               dateObj.setMonth(dateObj.getMonth() + i);
-              
-              // O primeiro segue o status do form. Os repetidos (futuros) nascem como pendente.
               const currentStatus = (i === 0) ? data.status : 'pending';
-
               transactionsToInsert.push({
-                  description: data.description,
-                  amount: numericAmount,
-                  type: data.type,
-                  category: finalCategory,
-                  classification: data.classification,
-                  payment_method: data.payment_method || 'pix',
-                  status: currentStatus,
-                  date: dateObj.toISOString(),
-                  notes: data.notes,
-                  group_id: groupId,
-                  installment_number: i + 1,
-                  installment_total: repeat
+                  description: data.description, amount: numericAmount, type: data.type, category: finalCategory, classification: data.classification,
+                  payment_method: data.payment_method || 'pix', status: currentStatus, date: dateObj.toISOString(), notes: data.notes, group_id: groupId,
+                  installment_number: i + 1, installment_total: repeat
               });
           }
-
           const { error } = await supabase.from('transactions').insert(transactionsToInsert);
           if(error) throw error;
-
           toast({ title: repeat > 1 ? `${repeat} lançamentos gerados!` : "Lançamento salvo!" });
           setIsModalOpen(false); reset(); fetchFinancialData();
-
       } catch (error: any) {
           toast({ title: "Erro", description: error.message, variant: "destructive" });
       }
@@ -219,10 +229,7 @@ export default function FinancesPage() {
               await supabase.from('transactions').delete().eq('id', t.id);
               toast({ title: "Lançamento excluído" });
           } else if (deleteMode === 'future' && t.group_id) {
-              const { count } = await supabase.from('transactions')
-                  .delete({ count: 'exact' })
-                  .eq('group_id', t.group_id)
-                  .gte('date', t.date);
+              const { count } = await supabase.from('transactions').delete({ count: 'exact' }).eq('group_id', t.group_id).gte('date', t.date);
               toast({ title: "Recorrência atualizada", description: `${count} lançamentos removidos.` });
           }
           fetchFinancialData();
@@ -256,13 +263,11 @@ export default function FinancesPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
-          
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Financeiro</h1>
               <p className="text-slate-600 dark:text-slate-400 mt-1">Gestão de fluxo de caixa</p>
             </div>
-            
             <div className="flex gap-2 flex-wrap items-center">
                  <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
                     <Calendar className="h-4 w-4 text-slate-500 ml-2" />
@@ -273,9 +278,12 @@ export default function FinancesPage() {
                         {years.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
                 </div>
-                <Button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 h-10">
-                    <Plus className="mr-2 h-4 w-4"/> Novo Lançamento
-                </Button>
+                {/* Só mostra botão se puder criar */}
+                {can('finance', 'create') && (
+                    <Button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 h-10">
+                        <Plus className="mr-2 h-4 w-4"/> Novo Lançamento
+                    </Button>
+                )}
             </div>
           </div>
 
@@ -283,6 +291,7 @@ export default function FinancesPage() {
              <div className="flex justify-center py-20"><Loader2 className="animate-spin h-10 w-10 text-blue-600"/></div>
           ) : (
             <>
+              {/* Cards de Métricas */}
               <div className="grid gap-6 md:grid-cols-3 mb-8">
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                     <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Receitas (Realizadas)</span><div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg"><TrendingUp className="h-5 w-5 text-green-600" /></div></div>
@@ -298,9 +307,9 @@ export default function FinancesPage() {
                 </div>
               </div>
 
+              {/* Tabela */}
               <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col h-[600px]">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
-                  
                   <div className="flex gap-4 items-center w-full">
                         <h3 className="font-bold text-slate-900 dark:text-white whitespace-nowrap">Extrato</h3>
                         <div className="relative w-full max-w-xs">
@@ -308,13 +317,11 @@ export default function FinancesPage() {
                             <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent dark:text-white"/>
                         </div>
                   </div>
-               
                     <div className="flex gap-2">
                         <select value={filterType} onChange={e => setFilterType(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Todas</option><option value="income">Receitas</option><option value="expense">Despesas</option></select>
                         <select value={filterClass} onChange={e => setFilterClass(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Tudo</option><option value="fixo">Fixo</option><option value="variavel">Variável</option></select>
                     </div>
                 </div>
-                
                 <div className="flex-1 overflow-auto p-0">
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800 sticky top-0">
