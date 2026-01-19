@@ -607,15 +607,19 @@ function TasksView() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Estados de Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isColumnsModalOpen, setIsColumnsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<any | null>(null);
   
-  const [columns, setColumns] = useState(DEFAULT_COLUMNS);
+  // COLUNAS: Iniciam vazias e carregam do banco
+  const [columns, setColumns] = useState<any[]>([]);
+  
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [newColumnDesc, setNewColumnDesc] = useState('');
-  const [editingColumn, setEditingColumn] = useState<any | null>(null); // Para editar nome/descrição da coluna
+  const [editingColumn, setEditingColumn] = useState<any | null>(null);
 
   const [clients, setClients] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -626,21 +630,67 @@ function TasksView() {
   const [activeTab, setActiveTab] = useState('details');
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Filtros
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [subProjectFilter, setSubProjectFilter] = useState('all');
-  const [deadlineFilter, setDeadlineFilter] = useState('all'); // Novo filtro de prazo
+  const [deadlineFilter, setDeadlineFilter] = useState('all');
   
   const { register, handleSubmit, reset, watch, setValue } = useForm<TaskFormData>({ resolver: zodResolver(taskSchema) });
   const selectedClientId = watch('clientId');
   
+  // --- CARREGAMENTO INICIAL (Tarefas + Colunas do Banco) ---
   useEffect(() => { 
       fetchData(); 
-      const savedCols = localStorage.getItem('kanban-columns');
-      if (savedCols) setColumns(JSON.parse(savedCols));
+      fetchColumns(); // <--- Agora busca do Supabase, não do LocalStorage
   }, []);
   
+  // Função para buscar a configuração global de colunas
+  const fetchColumns = async () => {
+      try {
+          const { data, error } = await supabase
+              .from('app_settings')
+              .select('value')
+              .eq('key', 'kanban_columns')
+              .single();
+          
+          if (error && error.code !== 'PGRST116') { // Ignora erro se não encontrar (usa default)
+              console.error("Erro ao buscar colunas:", error);
+          }
+
+          if (data?.value) {
+              setColumns(data.value);
+          } else {
+              setColumns(DEFAULT_COLUMNS); // Se não tiver no banco, usa o padrão
+          }
+      } catch (err) {
+          console.error("Erro fetchColumns:", err);
+      }
+  };
+
+  // Função centralizada para salvar colunas no banco (Substitui saveColumns local)
+  const saveColumnsToDb = async (newCols: any[]) => {
+      // 1. Atualiza visualmente na hora (otimista)
+      setColumns(newCols);
+      
+      // 2. Salva no banco para todos verem
+      try {
+          const { error } = await supabase
+              .from('app_settings')
+              .upsert({ 
+                  key: 'kanban_columns', 
+                  value: newCols, 
+                  updated_by: user?.id 
+              });
+              
+          if (error) throw error;
+      } catch (err) {
+          console.error("Erro ao salvar colunas:", err);
+          toast({ title: "Erro ao sincronizar", description: "Sua alteração de coluna pode não ter salvo.", variant: "destructive" });
+      }
+  };
+
   useEffect(() => {
       if (selectedClientId) {
           const client = clients.find(c => c.id === selectedClientId);
@@ -660,10 +710,9 @@ function TasksView() {
     
     const { data: t } = await supabase.from('tasks').select('*, client:clients(name, company), assignee:profiles(full_name)').order('created_at', {ascending:false});
     
-    // --- CORREÇÃO IMPORTANTE: Mapear due_date para dueDate ---
     if (t) setTasks(t.map((task: any) => ({
          ...task,
-         dueDate: task.due_date, // Mapeamento explícito para o componente
+         dueDate: task.due_date,
          client_name: task.client?.company || task.client?.name, 
          assignee_name: task.assignee?.full_name 
     })));
@@ -673,17 +722,10 @@ function TasksView() {
 
   const getTaskDeadlineStatus = (task: any) => {
       if (!task.dueDate || task.status === 'concluida' || task.status === 'cancelada') return 'on_time';
-      
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      
-      // Corrige string YYYY-MM-DD para garantir hora local
+      const today = new Date(); today.setHours(0,0,0,0);
       let dateStr = task.dueDate;
       if (!dateStr.includes('T')) dateStr += 'T12:00:00';
-      
-      const due = new Date(dateStr);
-      due.setHours(0,0,0,0);
-
+      const due = new Date(dateStr); due.setHours(0,0,0,0);
       if (due < today) return 'overdue';
       if (due.getTime() === today.getTime()) return 'today';
       return 'on_time';
@@ -695,7 +737,6 @@ function TasksView() {
       const matchClient = clientFilter === 'all' || t.client_id === clientFilter;
       const matchAssignee = assigneeFilter === 'all' || t.assignee_id === assigneeFilter;
       const matchSubProject = subProjectFilter === 'all' || t.sub_project === subProjectFilter;
-      
       const deadlineStatus = getTaskDeadlineStatus(t);
       const matchDeadline = deadlineFilter === 'all' 
           || (deadlineFilter === 'overdue' && deadlineStatus === 'overdue')
@@ -706,20 +747,13 @@ function TasksView() {
   });
 
   const tasksByStatus = filteredTasks.reduce((acc, t) => { acc[t.status] = acc[t.status] || []; acc[t.status].push(t); return acc; }, {} as any);
-
-  const stats = {
-      total: filteredTasks.length,
-      overdue: tasks.filter(t => getTaskDeadlineStatus(t) === 'overdue').length // Contagem global de atrasadas para o alerta
-  };
+  const stats = { total: filteredTasks.length, overdue: tasks.filter(t => getTaskDeadlineStatus(t) === 'overdue').length };
 
   const onSubmit = async (data: TaskFormData) => {
-    // --- CORREÇÃO IMPORTANTE: Garantir que a data vazia vá como null e com T12:00:00 ---
     const finalDate = data.dueDate ? `${data.dueDate}T12:00:00` : null;
-
     const payload = {
         title: data.title, description: data.description, priority: data.priority, status: data.status,
-        due_date: finalDate, // Garante envio correto para o banco
-        client_id: data.clientId || null, assignee_id: data.assignedTo || null,
+        due_date: finalDate, client_id: data.clientId || null, assignee_id: data.assignedTo || null,
         sub_project: data.subProject || null
     };
 
@@ -742,37 +776,45 @@ function TasksView() {
       }
   };
 
+  // --- DRAG AND DROP ---
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
     const taskId = active.id as string;
     const newStatus = over.id as string;
     
+    // Verifica se a coluna de destino existe
     if (!columns.some(c => c.id === newStatus)) return;
     if (active.data.current?.sortable.containerId === newStatus) return;
+    
+    // Atualiza estado local
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+    
+    // Salva no banco
     await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
   };
 
-  const saveColumns = (newCols: any[]) => {
-      setColumns(newCols);
-      localStorage.setItem('kanban-columns', JSON.stringify(newCols));
-  };
+  // --- GERENCIAMENTO DE COLUNAS (Agora salva no Banco) ---
 
   const addColumn = () => {
       if (!newColumnTitle.trim()) return;
       const id = newColumnTitle.toLowerCase().replace(/\s+/g, '_');
+      
       if (columns.some(c => c.id === id)) { toast({ title: "Coluna já existe" }); return; }
+      
       const newCols = [...columns, { id, title: newColumnTitle, color: 'bg-slate-200', description: newColumnDesc }];
-      saveColumns(newCols);
+      saveColumnsToDb(newCols); // <--- Salva no Supabase
+      
       setNewColumnTitle('');
       setNewColumnDesc('');
   };
 
   const updateColumn = () => {
       if (!editingColumn || !newColumnTitle.trim()) return;
+      
       const newCols = columns.map(c => c.id === editingColumn.id ? { ...c, title: newColumnTitle, description: newColumnDesc } : c);
-      saveColumns(newCols);
+      saveColumnsToDb(newCols); // <--- Salva no Supabase
+      
       setEditingColumn(null);
       setNewColumnTitle('');
       setNewColumnDesc('');
@@ -788,7 +830,7 @@ function TasksView() {
           return;
       }
       const newCols = columns.filter(c => c.id !== id);
-      saveColumns(newCols);
+      saveColumnsToDb(newCols); // <--- Salva no Supabase
   };
 
   const moveColumn = (index: number, direction: 'up' | 'down') => {
@@ -796,22 +838,18 @@ function TasksView() {
       const newCols = [...columns];
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
       [newCols[index], newCols[targetIndex]] = [newCols[targetIndex], newCols[index]];
-      saveColumns(newCols);
+      saveColumnsToDb(newCols); // <--- Salva no Supabase
   };
+
+  // --- MODAIS E COMENTÁRIOS (Mantidos iguais) ---
 
   const openEditModal = (task: any) => {
       setEditingTask(task);
       setActiveTab('details');
-      
-      // Na edição, precisamos pegar apenas a parte YYYY-MM-DD da data ISO para o input type="date" funcionar
       let formattedDate = '';
       if (task.dueDate) {
-         // Se for ISO completo
-         if (task.dueDate.includes('T')) {
-             formattedDate = task.dueDate.split('T')[0];
-         } else {
-             formattedDate = task.dueDate;
-         }
+         if (task.dueDate.includes('T')) formattedDate = task.dueDate.split('T')[0];
+         else formattedDate = task.dueDate;
       }
 
       reset({
@@ -841,9 +879,8 @@ function TasksView() {
       default: return 'bg-slate-100 text-slate-700';
     }
   };
-
+  
   const allSubProjects = Array.from(new Set(tasks.map(t => t.sub_project).filter(Boolean)));
-
   const getDeadlineBadge = (task: any) => {
       const status = getTaskDeadlineStatus(task);
       if (status === 'overdue') return <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200"><AlertCircle className="h-3 w-3"/> Atrasada</span>;
@@ -915,7 +952,7 @@ function TasksView() {
             </div>
         )}
 
-        {/* MODAL NOVA TAREFA (Campos Restaurados) */}
+        {/* MODAL NOVA TAREFA */}
         {isModalOpen && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full flex flex-col border dark:border-slate-800 shadow-2xl">
@@ -1091,138 +1128,199 @@ const goalSchema = z.object({
 type GoalFormData = z.infer<typeof goalSchema>;
 
 function GoalsView() {
+  const { user } = useAuth();
   const [goals, setGoals] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<any | null>(null);
-  const [clientFilter, setClientFilter] = useState('all');
-  
-  const { register, handleSubmit, reset } = useForm<GoalFormData>({ resolver: zodResolver(goalSchema) });
-  useEffect(() => { loadData(); }, []);
+  const [loading, setLoading] = useState(true);
+
+  // Schema de Validação
+  const goalSchema = z.object({
+    title: z.string().min(1, "Título é obrigatório"),
+    targetValue: z.string().min(1, "Valor da meta é obrigatório"),
+    currentValue: z.string().min(1, "Valor atual é obrigatório"),
+    deadline: z.string().min(1, "Prazo é obrigatório"),
+    clientId: z.string().optional(),
+  });
+
+  type GoalFormData = z.infer<typeof goalSchema>;
+
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<GoalFormData>({
+    resolver: zodResolver(goalSchema)
+  });
+
+  // --- 1. CARREGAMENTO CORRIGIDO (Com Await e Banco de Dados) ---
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const loadData = async () => {
-      const savedGoals = localStorage.getItem('goals');
-      if (savedGoals) setGoals(JSON.parse(savedGoals));
-      const { data } = await supabase.from('clients').select('id, name, company');
-      if (data) setClients(data);
+    try {
+      // Carrega Clientes para o Select
+      const { data: clientsData } = await supabase
+        .from('clients')
+        .select('id, name, company')
+        .eq('status', 'active');
+      
+      if (clientsData) setClients(clientsData);
+
+      // Carrega Metas do App Settings (Banco de Dados Compartilhado)
+      const { data: settingsData } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'goals_config')
+        .single();
+
+      if (settingsData?.value) {
+        // O Supabase já retorna o JSON pronto, não precisa de JSON.parse se for jsonb
+        setGoals(settingsData.value);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar metas:", error);
+    } finally {
+      setLoading(false);
+    }
   };
-  const stats = {
-      total: goals.length,
-      completed: goals.filter(g => Number(g.currentValue) >= Number(g.targetValue)).length,
-      inProgress: goals.filter(g => Number(g.currentValue) < Number(g.targetValue)).length
+
+  // --- 2. SALVAMENTO CORRIGIDO (Salva no Banco) ---
+  const onSubmit = async (data: GoalFormData) => {
+    const newGoal = {
+      id: crypto.randomUUID(),
+      ...data,
+      progress: Math.min(100, Math.round((Number(data.currentValue) / Number(data.targetValue)) * 100))
+    };
+
+    const updatedGoals = [...goals, newGoal];
+    
+    // Atualiza visualmente na hora
+    setGoals(updatedGoals);
+    setIsModalOpen(false);
+    reset();
+
+    // Salva no Banco para todos verem
+    try {
+        await supabase.from('app_settings').upsert({
+            key: 'goals_config',
+            value: updatedGoals,
+            updated_by: user?.id
+        });
+        toast({ title: "Meta criada com sucesso!" });
+    } catch (error) {
+        toast({ title: "Erro ao salvar meta", variant: "destructive" });
+    }
   };
-  const onSubmit = (data: GoalFormData) => {
-      const newGoal = {
-          id: editingGoal?.id || Date.now().toString(),
-          ...data,
-          targetValue: parseFloat(data.targetValue.replace(',', '.')),
-          currentValue: data.currentValue ? parseFloat(data.currentValue.replace(',', '.')) : 0,
-          created_at: new Date().toISOString()
-      };
-      let updatedGoals;
-      if (editingGoal) updatedGoals = goals.map(g => g.id === editingGoal.id ? newGoal : g);
-      else updatedGoals = [newGoal, ...goals];
+
+  const deleteGoal = async (id: string) => {
+      if(!confirm("Excluir meta?")) return;
+      
+      const updatedGoals = goals.filter(g => g.id !== id);
       setGoals(updatedGoals);
-      localStorage.setItem('goals', JSON.stringify(updatedGoals));
-      setIsModalOpen(false); reset(); toast({ title: "Meta salva!" });
+
+      await supabase.from('app_settings').upsert({
+          key: 'goals_config',
+          value: updatedGoals,
+          updated_by: user?.id
+      });
   };
-  const handleDelete = (id: string) => {
-      if(!confirm("Excluir?")) return;
-      const updated = goals.filter(g => g.id !== id);
-      setGoals(updated);
-      localStorage.setItem('goals', JSON.stringify(updated));
-  }
 
-  const filteredGoals = goals.filter(g => clientFilter === 'all' || g.clientId === clientFilter);
+  // Função auxiliar para cor da barra de progresso
+  const getProgressColor = (progress: number) => {
+      if (progress >= 100) return 'bg-green-500';
+      if (progress >= 50) return 'bg-blue-500';
+      return 'bg-yellow-500';
+  };
+
+  const formatMoney = (val: string) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(val));
+
   return (
-      <div className="space-y-6 animate-in fade-in zoom-in duration-300">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Target className="h-3 w-3"/> Total Metas</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{stats.total}</p>
-             </div>
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-green-500 shadow-sm">
-                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><CheckSquare className="h-3 w-3"/> Atingidas</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">{stats.completed}</p>
-             </div>
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-blue-500 shadow-sm">
-                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Activity className="h-3 w-3"/> Em Andamento</p>
-                <p className="text-2xl font-bold text-blue-600 mt-1">{stats.inProgress}</p>
-             </div>
-          </div>
+    <div className="space-y-6 animate-in fade-in zoom-in duration-300">
+      <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border dark:border-slate-800">
+        <div>
+            <h2 className="text-lg font-bold dark:text-white">Metas da Agência</h2>
+            <p className="text-sm text-slate-500">Acompanhamento de objetivos financeiros e operacionais</p>
+        </div>
+        <Button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white"><Plus className="mr-2 h-4 w-4"/> Nova Meta</Button>
+      </div>
 
-          <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold dark:text-white">Metas Globais</h3>
-              <div className="flex gap-2">
-                  <Button onClick={() => setIsFilterModalOpen(true)} variant="outline"><Filter className="h-4 w-4 mr-2"/> Filtros</Button>
-                  <Button onClick={() => { setEditingGoal(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 text-white"><Plus className="mr-2 h-4 w-4"/> Nova Meta</Button>
-              </div>
+      {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin h-8 w-8 text-blue-600"/></div>
+      ) : goals.length === 0 ? (
+          <div className="text-center py-10 text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-dashed dark:border-slate-800">
+              Nenhuma meta definida. Clique em "Nova Meta" para começar.
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {filteredGoals.length === 0 && <p className="text-slate-500">Nenhuma meta encontrada.</p>}
-              {filteredGoals.map(goal => {
-                  const progress = Math.min((goal.currentValue / goal.targetValue) * 100, 100);
-                  const clientName = clients.find(c => c.id === goal.clientId)?.company || clients.find(c => c.id === goal.clientId)?.name;
-                  return (
-                      <div key={goal.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border dark:border-slate-800 shadow-sm">
-                          <div className="flex justify-between mb-2">
-                              <h4 className="font-bold dark:text-white">{goal.title}</h4>
-                              <div className="flex gap-1"><button onClick={() => {setEditingGoal(goal); reset({...goal, targetValue: goal.targetValue.toString(), currentValue: goal.currentValue.toString()}); setIsModalOpen(true)}}><Edit className="h-4 w-4 text-slate-400"/></button><button onClick={() => handleDelete(goal.id)}><Trash2 className="h-4 w-4 text-red-400"/></button></div>
-                          </div>
-                          {clientName && <p className="text-xs text-slate-500 mb-2">Cliente: {clientName}</p>}
-                          <div className="flex justify-between text-sm mb-1 text-slate-700 dark:text-slate-300">
-                              <span>Progresso</span>
-                              <span className="font-bold">{goal.currentValue} / {goal.targetValue}</span>
-                          </div>
-                          <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full"><div className="bg-blue-600 h-2 rounded-full" style={{width: `${progress}%`}}></div></div>
-                          {goal.deadline && <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><Calendar className="h-3 w-3"/> {new Date(goal.deadline).toLocaleDateString()}</p>}
-                      </div>
-                  );
-              })}
-          </div>
+      ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {goals.map((goal) => (
+              <div key={goal.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all relative group">
+                <button onClick={() => deleteGoal(goal.id)} className="absolute top-4 right-4 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-4 w-4"/></button>
+                
+                <div className="mb-4">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Target className="h-4 w-4 text-blue-600"/>
+                        <h3 className="font-bold text-slate-800 dark:text-white">{goal.title}</h3>
+                    </div>
+                    {goal.clientId && <p className="text-xs text-slate-500 ml-6">{clients.find(c => c.id === goal.clientId)?.name || 'Cliente'}</p>}
+                </div>
 
-          {isModalOpen && (
-              <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-                  <div className="bg-white dark:bg-slate-900 rounded-lg max-w-md w-full p-6 border dark:border-slate-800">
-                      <h2 className="text-xl font-bold mb-4 dark:text-white">{editingGoal ? 'Editar' : 'Nova Meta'}</h2>
-                      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                          <div><label className="text-sm dark:text-slate-300">Título</label><Input {...register('title')} className="dark:bg-slate-900"/></div>
-                          <div><label className="text-sm dark:text-slate-300">Cliente</label><select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:text-white"><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select></div>
-                          <div className="grid grid-cols-2 gap-4">
-                              <div><label className="text-sm dark:text-slate-300">Alvo</label><Input {...register('targetValue')} className="dark:bg-slate-900"/></div>
-                              <div><label className="text-sm dark:text-slate-300">Atual</label><Input {...register('currentValue')} className="dark:bg-slate-900"/></div>
-                          </div>
-                          <div><label className="text-sm dark:text-slate-300">Prazo</label><Input type="date" {...register('deadline')} className="dark:bg-slate-900"/></div>
-                          <div><label className="text-sm dark:text-slate-300">Descrição</label><textarea {...register('description')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:text-white" rows={2}></textarea></div>
-                          <div><label className="text-sm dark:text-slate-300">Observações</label><textarea {...register('notes')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:text-white" rows={2}></textarea></div>
-                          
-                          <div className="flex justify-end gap-2 mt-4">
-                              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>Cancelar</Button>
-                              <Button type="submit" className="bg-slate-900 text-white dark:bg-white dark:text-slate-900">Salvar</Button>
-                          </div>
-                      </form>
-                  </div>
-              </div>
-          )}
-
-          {isFilterModalOpen && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
-                        <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Filtrar Metas</h3><button onClick={() => setIsFilterModalOpen(false)}><X /></button></div>
-                        <div className="space-y-3">
-                            <label className="text-sm">Cliente</label>
-                            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos Clientes</option>{clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}</select>
+                <div className="space-y-4">
+                    <div className="flex justify-between items-end">
+                        <div>
+                            <p className="text-xs text-slate-500">Atual</p>
+                            <p className="text-xl font-bold dark:text-white">{formatMoney(goal.currentValue)}</p>
                         </div>
-                        <div className="flex gap-3 mt-6">
-                            <button onClick={() => { setClientFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button>
-                            <button onClick={() => setIsFilterModalOpen(false)} className="flex-1 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Aplicar</button>
+                        <div className="text-right">
+                            <p className="text-xs text-slate-500">Alvo</p>
+                            <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{formatMoney(goal.targetValue)}</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-medium">
+                            <span className={goal.progress >= 100 ? 'text-green-600' : 'text-blue-600'}>{goal.progress}% Concluído</span>
+                            <span className="text-slate-400">Prazo: {new Date(goal.deadline).toLocaleDateString('pt-BR')}</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className={`h-full ${getProgressColor(goal.progress)} transition-all duration-500`} style={{ width: `${Math.min(goal.progress, 100)}%` }}></div>
                         </div>
                     </div>
                 </div>
-            )}
-      </div>
+              </div>
+            ))}
+          </div>
+      )}
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800 shadow-2xl">
+                <div className="flex justify-between mb-6">
+                    <h3 className="font-bold text-lg dark:text-white">Nova Meta</h3>
+                    <button onClick={() => setIsModalOpen(false)}><X className="dark:text-white"/></button>
+                </div>
+                <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                    <div><label className="text-sm mb-1 block">Título da Meta</label><Input {...register('title')} placeholder="Ex: Faturamento Q1" /></div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div><label className="text-sm mb-1 block">Valor Alvo (R$)</label><Input type="number" {...register('targetValue')} placeholder="0.00" /></div>
+                        <div><label className="text-sm mb-1 block">Valor Atual (R$)</label><Input type="number" {...register('currentValue')} placeholder="0.00" /></div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div><label className="text-sm mb-1 block">Prazo</label><Input type="date" {...register('deadline')} /></div>
+                        <div>
+                            <label className="text-sm mb-1 block">Vincular Cliente</label>
+                            <select {...register('clientId')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800">
+                                <option value="">Geral (Sem cliente)</option>
+                                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <Button type="submit" className="w-full bg-slate-900 text-white mt-2">Criar Meta</Button>
+                </form>
+            </div>
+        </div>
+      )}
+    </div>
   );
 }
 
