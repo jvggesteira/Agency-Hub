@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { 
-  Plus, UserPlus, X, ListTodo, History, Clock, Search, Copy, Upload, FileText, CheckCircle, AlertCircle, 
+  Plus, UserPlus, X, ListTodo, History, Clock, Search, Copy, Upload, Download, FileText, CheckCircle, AlertCircle, 
   Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { usePermission } from '@/hooks/use-permission';
@@ -43,7 +43,6 @@ const leadSchema = z.object({
   status: z.string(), 
   temperature: z.enum(['quente', 'morno', 'frio']).optional(),
 });
-
 type LeadFormData = z.infer<typeof leadSchema>;
 
 // Tipos
@@ -80,7 +79,7 @@ interface Lead {
   description?: string;
   priority: string; 
   temperature: 'quente' | 'morno' | 'frio'; 
-  status: string; 
+  status: string;
   email: string;
   phone: string;
   company: string;
@@ -102,7 +101,7 @@ const SOURCES = [
     { value: 'site', label: 'Site' },
 ];
 
-// --- FUNÇÕES DE FORMATAÇÃO (MANTIDAS DO SEU CÓDIGO ORIGINAL) ---
+// --- FUNÇÕES DE FORMATAÇÃO ---
 const formatPhone = (value: string) => {
   if (!value) return "";
   value = value.replace(/\D/g, "");
@@ -146,7 +145,7 @@ export default function CRMPage() {
   const [isWonModalOpen, setIsWonModalOpen] = useState(false);
   const [isPipelineSettingsOpen, setIsPipelineSettingsOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-
+  
   // Estados de Edição
   const [pendingLeadToConvert, setPendingLeadToConvert] = useState<Lead | null>(null);
   const [contractFile, setContractFile] = useState<File | null>(null);
@@ -161,7 +160,7 @@ export default function CRMPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDate, setNewTaskDate] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
-
+  
   // Filtros e Config
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -170,21 +169,15 @@ export default function CRMPage() {
   const [targetStages, setTargetStages] = useState<PipelineStage[]>([]);
   const [editPipelineName, setEditPipelineName] = useState('');
   const [newStageName, setNewStageName] = useState('');
-
+  
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<LeadFormData>({
     resolver: zodResolver(leadSchema),
   });
 
   // --- CONFIGURAÇÃO DE SENSORES PARA DRAG AND DROP ---
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     useSensor(TouchSensor)
   );
 
@@ -205,7 +198,6 @@ export default function CRMPage() {
   const initializeCRM = async () => {
     setLoading(true);
     const { data: pipes } = await supabase.from('pipelines').select('*').order('created_at');
-    
     if (pipes && pipes.length > 0) {
       setPipelines(pipes);
       if (!currentPipelineId) setCurrentPipelineId(pipes[0].id);
@@ -239,7 +231,6 @@ export default function CRMPage() {
 
   const fetchLeads = async (pipelineId: string) => {
     const { data } = await supabase.from('leads').select('*').eq('pipeline_id', pipelineId).order('created_at', { ascending: false });
-    
     if (data) {
       const formattedLeads: Lead[] = data.map(l => ({
         id: l.id,
@@ -267,6 +258,67 @@ export default function CRMPage() {
 
     const { data: tsks } = await supabase.from('lead_tasks').select('*').eq('lead_id', leadId).order('due_date', { ascending: true });
     if (tsks) setTasks(tsks);
+  };
+
+  // --- NOVAS FUNÇÕES: IMPORTAR E EXPORTAR ---
+  const handleExportLeads = () => {
+    if (!leads || leads.length === 0) { toast({ title: "Nada para exportar", description: "Não há leads no funil.", variant: "destructive" }); return; }
+    const headers = ["Nome", "Empresa", "Email", "Telefone", "Valor", "Status", "Fonte", "Notas"];
+    const csvRows = [
+      headers.join(','),
+      ...leads.map(lead => {
+        const row = [
+          `"${lead.title || ''}"`, `"${lead.company || ''}"`, `"${lead.email || ''}"`, `"${lead.phone || ''}"`, `"${lead.budget || 0}"`,
+          `"${stages.find(s => s.id === lead.status)?.name || lead.status}"`, `"${lead.source || ''}"`, `"${lead.notes || ''}"`
+        ];
+        return row.join(',');
+      })
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURI(csvRows.join('\n'));
+    const link = document.createElement("a");
+    link.setAttribute("href", csvContent);
+    link.setAttribute("download", `leads_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!currentPipelineId || stages.length === 0) { toast({ title: "Erro", description: "Carregue o pipeline primeiro.", variant: "destructive" }); return; }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      const rows = text.split('\n').slice(1); // Pula cabeçalho
+      const newLeads = [];
+      const firstStageId = stages[0].id;
+
+      for (const row of rows) {
+        if (!row.trim()) continue;
+        // Tenta separar por vírgula ou ponto e vírgula, removendo aspas
+        const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/"/g, '').trim());
+        
+        // Mapeamento CSV (Nome, Empresa, Email, Telefone, Valor)
+        if (cols.length >= 2) { 
+            newLeads.push({
+                name: cols[0], company: cols[1] || '', email: cols[2] || '', phone: cols[3] || '',
+                budget: cols[4] || '', status: firstStageId, source: 'import_kommo',
+                pipeline_id: currentPipelineId, temperature: 'morno'
+            });
+        }
+      }
+
+      if (newLeads.length > 0) {
+        const { error } = await supabase.from('leads').insert(newLeads);
+        if (error) { console.error(error); toast({ title: "Erro na importação", description: "Verifique o formato.", variant: "destructive" }); } 
+        else { toast({ title: "Sucesso!", description: `${newLeads.length} leads importados.` }); fetchLeads(currentPipelineId); }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; 
   };
 
   const handleAddNote = async () => {
@@ -342,7 +394,6 @@ export default function CRMPage() {
       notes: `[Origem CRM] ${lead.notes || ''}`, contractStartDate: new Date().toISOString().split('T')[0],
       status: 'active', value: contractValue, contract_url: contractUrl
     }).select().single();
-    
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
 
     if (newClient) {
@@ -360,59 +411,30 @@ export default function CRMPage() {
 
   const handleConfirmWin = async () => {
     if (!pendingLeadToConvert) return;
-    
-    // 1. Validação do Arquivo
     if (!contractFile) {
-        toast({ 
-            title: "Documento Obrigatório", 
-            description: "Para fechar a venda, é OBRIGATÓRIO anexar o contrato assinado ou comprovante.", 
-            variant: "destructive" 
-        });
+        toast({ title: "Documento Obrigatório", description: "Para fechar a venda, é OBRIGATÓRIO anexar o contrato assinado ou comprovante.", variant: "destructive" });
         return;
     }
 
     setIsUploading(true);
     let publicUrl: string | null = null;
-
     try {
-        // 2. Upload do Arquivo
         const cleanName = contractFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
         const fileName = `${Date.now()}_${cleanName}`;
-
         const { error: uploadError } = await supabase.storage.from('contracts').upload(fileName, contractFile, { cacheControl: '3600', upsert: false });
         if (uploadError) throw uploadError;
-        
         const { data: urlData } = supabase.storage.from('contracts').getPublicUrl(fileName);
         publicUrl = urlData.publicUrl;
-
-        // 3. Descobrir o ID da coluna "Ganho"
-        // Procuramos a coluna que tem "ganho" ou "fechado" no nome para garantir que o lead vá para o lugar certo visualmente
+        
         const wonStage = stages.find(s => s.name.toLowerCase().includes('ganho') || s.name.toLowerCase().includes('fechado'));
-        const newStatusId = wonStage ? wonStage.id : pendingLeadToConvert.status; // Fallback se não achar
+        const newStatusId = wonStage ? wonStage.id : pendingLeadToConvert.status;
 
-        // 4. Atualizar o Status no Banco
-        const { error: updateError } = await supabase
-            .from('leads')
-            .update({ status: newStatusId })
-            .eq('id', pendingLeadToConvert.id);
-
+        const { error: updateError } = await supabase.from('leads').update({ status: newStatusId }).eq('id', pendingLeadToConvert.id);
         if (updateError) throw updateError;
 
-        // 5. ATUALIZAR A INTERFACE (O PASSO QUE FALTAVA)
-        setLeads(currentLeads => currentLeads.map(l => 
-            l.id === pendingLeadToConvert.id 
-                ? { ...l, status: newStatusId } 
-                : l
-        ));
-
-        // 6. Converter para Cliente e Logs
+        setLeads(currentLeads => currentLeads.map(l => l.id === pendingLeadToConvert.id ? { ...l, status: newStatusId } : l));
         await convertToClient(pendingLeadToConvert, publicUrl);
-
-        // 7. Limpeza e Fechamento
-        setIsWonModalOpen(false);
-        setPendingLeadToConvert(null);
-        setContractFile(null);
-
+        setIsWonModalOpen(false); setPendingLeadToConvert(null); setContractFile(null);
     } catch (error: any) {
         console.error("Erro no processo de ganho:", error);
         toast({ title: "Erro ao processar", description: error.message, variant: "destructive" });
@@ -421,14 +443,10 @@ export default function CRMPage() {
     }
   };
 
-  const handleCancelWin = () => {
-      setIsWonModalOpen(false);
-      setPendingLeadToConvert(null);
-      setContractFile(null);
-  };
-
+  const handleCancelWin = () => { setIsWonModalOpen(false); setPendingLeadToConvert(null); setContractFile(null); };
+  
   const openTransferModal = (lead: Lead) => { setSelectedLead(lead); setTransferTargetPipeline(''); setTargetStages([]); setIsTransferModalOpen(true); };
-
+  
   useEffect(() => {
       if (transferTargetPipeline) {
           const fetchTargetStages = async () => {
@@ -497,24 +515,18 @@ export default function CRMPage() {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
-
     const leadId = active.id as string;
     const newStatusId = over.id as string; 
-    
     if (active.data.current?.sortable.containerId === newStatusId) return;
-
     const currentLead = leads.find(l => l.id === leadId);
     if (!currentLead || currentLead.status === newStatusId) return;
-
     const targetStage = stages.find(s => s.id === newStatusId);
     const isWonStage = targetStage?.name.toLowerCase().includes('ganho') || targetStage?.name.toLowerCase().includes('fechado');
-
     if (isWonStage) {
         setPendingLeadToConvert(currentLead);
         setIsWonModalOpen(true);
         return;
     }
-
     setLeads(leads.map(l => l.id === leadId ? { ...l, status: newStatusId } : l));
     await supabase.from('leads').update({ status: newStatusId }).eq('id', leadId);
   };
@@ -588,17 +600,39 @@ export default function CRMPage() {
                         {p.name}
                     </button>
                 ))}
-                <button onClick={createPipeline} className="p-1 rounded-full bg-slate-200 dark:bg-slate-800"><Plus className="h-4 w-4" /></button>
-                <button onClick={() => setIsPipelineSettingsOpen(true)} className="p-1 rounded-full bg-slate-200 dark:bg-slate-800 ml-2"><Settings className="h-4 w-4" /></button>
+                {can('crm', 'create') && <button onClick={createPipeline} className="p-1 rounded-full bg-slate-200 dark:bg-slate-800"><Plus className="h-4 w-4" /></button>}
+                {can('crm', 'edit') && <button onClick={() => setIsPipelineSettingsOpen(true)} className="p-1 rounded-full bg-slate-200 dark:bg-slate-800 ml-2"><Settings className="h-4 w-4" /></button>}
               </div>
             </div>
+            
+            {/* BOTÕES DE AÇÃO: IMPORTAR/EXPORTAR/NOVO */}
             <div className="flex gap-3">
                 <div className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border dark:border-slate-800">
                     <span className="text-xs text-slate-500">Webhook:</span>
                     <code className="text-xs bg-slate-100 dark:bg-slate-950 px-2 py-1 rounded max-w-[100px] truncate">{webhookUrl || 'Carregando...'}</code>
                     <button onClick={copyWebhook}><Copy className="h-4 w-4"/></button>
                 </div>
-                <Button onClick={() => { setEditingLead(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 dark:bg-white dark:text-slate-900"><UserPlus className="h-4 w-4 mr-2" /> Novo Lead</Button>
+
+                {can('crm', 'view') && (
+                    <button onClick={handleExportLeads} className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium">
+                        <Download className="h-4 w-4"/> Exportar
+                    </button>
+                )}
+
+                {can('crm', 'create') && (
+                    <div className="relative">
+                        <input type="file" accept=".csv" onChange={handleImportLeads} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                        <button className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium h-full">
+                            <Upload className="h-4 w-4"/> Importar
+                        </button>
+                    </div>
+                )}
+
+                {can('crm', 'create') && (
+                    <Button onClick={() => { setEditingLead(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 dark:bg-white dark:text-slate-900">
+                        <UserPlus className="h-4 w-4 mr-2" /> Novo Lead
+                    </Button>
+                )}
             </div>
           </div>
 
@@ -620,7 +654,7 @@ export default function CRMPage() {
             <div className="h-[calc(100vh-280px)] overflow-x-auto pb-4">
                  <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
                     <div className="flex gap-4 h-full" style={{ minWidth: `${stages.length * 320}px` }}>
-                        {stages.map(stage => {
+                      {stages.map(stage => {
                             const leadsInStage = leadsByStage[stage.id] || [];
                             return (
                                 <div key={stage.id} className="flex flex-col h-full w-80">
@@ -632,14 +666,11 @@ export default function CRMPage() {
                                             </span>
                                             <span className="text-xs bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full">{leadsInStage.length}</span>
                                         </div>
-                                        <div className="text-sm font-bold pl-5 mt-1 text-slate-500">
-                                            {formatCurrencyDisplay(totalsByStatus[stage.id] || 0)}
-                                        </div>
+                                        <div className="text-sm font-bold pl-5 mt-1 text-slate-500">{formatCurrencyDisplay(totalsByStatus[stage.id] || 0)}</div>
                                     </div>
                                     <KanbanColumn id={stage.id} title="" tasks={leadsInStage} color={stage.color || 'bg-slate-100'}>
                                         {leadsInStage.map(lead => {
                                             const tempBadge = getTemperatureBadge(lead.temperature);
-                                            const TempIcon = tempBadge.icon;
                                             return (
                                                 <SortableTaskCard
                                                     key={lead.id}
@@ -655,7 +686,7 @@ export default function CRMPage() {
                                     </KanbanColumn>
                                 </div>
                             );
-                        })}
+                      })}
                     </div>
                  </DndContext>
             </div>
@@ -663,34 +694,21 @@ export default function CRMPage() {
         </main>
       </div>
 
+      {/* MODAL EDITAR/NOVO LEAD */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800">
-              <div className="flex justify-between mb-4">
-                  <h2 className="text-xl font-bold dark:text-white">{editingLead ? 'Editar' : 'Novo'} Lead</h2>
-                  <button onClick={() => setIsModalOpen(false)}><X/></button>
-              </div>
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800">
+              <div className="flex justify-between mb-4"><h2 className="text-xl font-bold dark:text-white">{editingLead ? 'Editar' : 'Novo'} Lead</h2><button onClick={() => setIsModalOpen(false)}><X/></button></div>
               <form onSubmit={handleSubmit(onModalSubmit)} className="space-y-4">
                 <input type="hidden" {...register('status')} /> 
-                <div className="grid grid-cols-2 gap-3">
-                    <Input {...register('name')} placeholder="Nome" className="dark:bg-slate-950" />
-                    <Input {...register('email')} placeholder="Email" className="dark:bg-slate-950" />
-                </div>
+                <div className="grid grid-cols-2 gap-3"><Input {...register('name')} placeholder="Nome" className="dark:bg-slate-950" /><Input {...register('email')} placeholder="Email" className="dark:bg-slate-950" /></div>
                 <Input {...register('phone')} placeholder="Telefone" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatPhone(e.target.value); register('phone').onChange(e); }}/>
                 <Input {...register('company')} placeholder="Empresa" className="dark:bg-slate-950" />
                 <div className="grid grid-cols-2 gap-3">
                     <Input {...register('budget')} placeholder="Orçamento" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatCurrencyInput(e.target.value); register('budget').onChange(e); }}/>
-                    <select {...register('temperature')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950">
-                        <option value="morno">Morno</option>
-                        <option value="quente">Quente</option>
-                        <option value="frio">Frio</option>
-                    </select>
+                    <select {...register('temperature')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="morno">Morno</option><option value="quente">Quente</option><option value="frio">Frio</option></select>
                 </div>
-                <select {...register('source')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950">
-                    <option value="">Fonte...</option>
-                    {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    <option value="outro">Outro</option>
-                </select>
+                <select {...register('source')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="">Fonte...</option>{SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}<option value="outro">Outro</option></select>
                 <textarea {...register('notes')} placeholder="Notas" className="w-full px-3 py-2 border dark:border-slate-800 rounded-lg bg-transparent dark:text-white" />
                 <Button type="submit" className="w-full bg-slate-900 dark:bg-white dark:text-slate-900">Salvar</Button>
               </form>
@@ -698,6 +716,7 @@ export default function CRMPage() {
         </div>
       )}
 
+      {/* MODAL DETALHES */}
       {isDetailModalOpen && selectedLead && (
           <div className="fixed inset-0 bg-black/60 z-50 flex justify-end">
               <div className="w-full max-w-xl bg-white dark:bg-slate-950 h-full shadow-2xl p-6 border-l dark:border-slate-800 overflow-y-auto animate-in slide-in-from-right">
@@ -705,10 +724,8 @@ export default function CRMPage() {
                       <div>
                           <h2 className="text-2xl font-bold dark:text-white">{selectedLead.title}</h2>
                           <div className="flex gap-2 mt-2">
-                              <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs">{selectedLead.company}</span>
-                              <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => openTransferModal(selectedLead)}>
-                                  <ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir Lead
-                              </Button>
+                               <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs">{selectedLead.company}</span>
+                              <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => openTransferModal(selectedLead)}><ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir Lead</Button>
                           </div>
                       </div>
                       <button onClick={() => setIsDetailModalOpen(false)}><X/></button>
@@ -754,6 +771,7 @@ export default function CRMPage() {
           </div>
       )}
 
+      {/* MODAL TRANSFERIR */}
       {isTransferModalOpen && (
           <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
@@ -779,6 +797,7 @@ export default function CRMPage() {
           </div>
       )}
 
+      {/* MODAL VENDA REALIZADA */}
       {isWonModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
            <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800 shadow-xl animate-in fade-in zoom-in duration-300">
@@ -794,13 +813,14 @@ export default function CRMPage() {
                   </label>
               </div>
               <div className="flex gap-3">
-                  <Button variant="outline" onClick={() => {setIsWonModalOpen(false); setPendingLeadToConvert(null); setContractFile(null);}} className="flex-1">Cancelar</Button>
+                  <Button variant="outline" onClick={handleCancelWin} className="flex-1">Cancelar</Button>
                   <Button onClick={handleConfirmWin} className="flex-1 bg-green-600 hover:bg-green-700 text-white" disabled={isUploading || !contractFile}>{isUploading ? 'Enviando...' : 'Confirmar'}</Button>
               </div>
            </div>
         </div>
       )}
 
+      {/* MODAL CONFIGURAÇÃO DO PIPELINE (FUNIL) */}
       {isPipelineSettingsOpen && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-900 rounded-xl max-w-lg w-full p-6 border dark:border-slate-800 max-h-[80vh] overflow-y-auto">
@@ -822,7 +842,6 @@ export default function CRMPage() {
                               <div key={s.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800 rounded border">
                                   <span className="text-sm">{s.name}</span>
                                   <div className="flex items-center gap-1">
-                                      {/* SETAS DE ORDENAÇÃO */}
                                       <button disabled={index === 0} onClick={() => moveStage(index, 'up')} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded disabled:opacity-30"><ChevronUp className="h-4 w-4"/></button>
                                       <button disabled={index === stages.length - 1} onClick={() => moveStage(index, 'down')} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded disabled:opacity-30"><ChevronDown className="h-4 w-4"/></button>
                                       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1"></div>
