@@ -661,7 +661,7 @@ export default function CRMPage() {
                     <div className="relative">
                         <input type="file" accept=".csv" onChange={handleImportLeads} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                         <button className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium h-full">
-                            <Upload className="h-4 w-4"/> Importar (Kommo)
+                            <Upload className="h-4 w-4"/> Importar
                         </button>
                     </div>
                 )}
