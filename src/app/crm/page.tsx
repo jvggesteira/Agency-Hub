@@ -11,7 +11,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { 
   Plus, UserPlus, X, ListTodo, History, Search, Copy, Upload, Download, FileText, CheckCircle, 
-  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Linkedin, Instagram, Phone
+  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Linkedin, Instagram, Phone, Globe, Link as LinkIcon
 } from 'lucide-react';
 import { usePermission } from '@/hooks/use-permission';
 import AccessDenied from '@/components/custom/access-denied';
@@ -66,6 +66,7 @@ const SOURCES = [
     { value: 'eventos', label: 'Eventos' },
     { value: 'site', label: 'Site' },
     { value: 'import_kommo', label: 'Importado Kommo' },
+    { value: 'import_planilha', label: 'Importado Planilha' },
 ];
 
 // --- FUNÇÕES DE FORMATAÇÃO ---
@@ -89,7 +90,7 @@ const formatCurrencyInput = (value: string) => {
 
 const parseCurrency = (value?: string) => {
     if (!value) return 0;
-    const cleanStr = value.replace(/[^\d,]/g, '').replace(',', '.');
+    const cleanStr = String(value).replace(/[^\d,]/g, '').replace(',', '.');
     const num = parseFloat(cleanStr);
     return isNaN(num) ? 0 : num;
 };
@@ -102,6 +103,7 @@ const parseKommoDate = (dateStr: string) => {
     if (!dateStr) return new Date().toISOString();
     try {
         const [datePart, timePart] = dateStr.split(' ');
+        if (!datePart) return new Date().toISOString();
         const [day, month, year] = datePart.split('.');
         if (timePart) return new Date(`${year}-${month}-${day}T${timePart}`).toISOString();
         return new Date(`${year}-${month}-${day}T12:00:00`).toISOString();
@@ -219,7 +221,6 @@ export default function CRMPage() {
         phone: l.phone || '',
         phone_secondary: l.phone_secondary || '',
         company: l.company || '',
-        // Força conversão para string para evitar erro de tipo
         budget: String(l.budget || l.value || ''), 
         source: l.source || 'manual',
         notes: l.notes || '',
@@ -243,7 +244,7 @@ export default function CRMPage() {
     if (tsks) setTasks(tsks);
   };
 
-  // --- IMPORTAR KOMMO (CSV ROBUSTO) ---
+  // --- FUNÇÕES NOVAS DE IMPORTAR/EXPORTAR (INJETADAS) ---
   const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -251,81 +252,81 @@ export default function CRMPage() {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const text = event.target?.result as string;
+      let text = event.target?.result as string;
       if (!text) return;
       
+      // Remove BOM (caractere invisivel do Excel)
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+      // Detecta separador automaticamente (; ou ,)
+      const firstLine = text.split('\n')[0];
+      const separator = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+
       const parseCSVLine = (line: string) => {
           const values = []; let current = ''; let inQuotes = false;
           for (let i = 0; i < line.length; i++) {
-              const char = line[i]; if (char === '"') { inQuotes = !inQuotes; } else if (char === ',' && !inQuotes) { values.push(current.trim()); current = ''; } else { current += char; }
+              const char = line[i]; 
+              if (char === '"') { inQuotes = !inQuotes; } 
+              else if (char === separator && !inQuotes) { values.push(current.trim()); current = ''; } 
+              else { current += char; }
           }
           values.push(current.trim()); return values;
       };
 
       const lines = text.split('\n'); if (lines.length < 2) return;
-      const headers = parseCSVLine(lines[0]).map(h => h.replace(/"/g, '').trim());
+      const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/"/g, '').trim());
       const newLeads = [];
       const firstStageId = stages[0].id;
 
-      // Mapeamento Kommo
-      const idxName = headers.indexOf('Lead título');
-      const idxContactName = headers.indexOf('Contato principal');
-      const idxCompany = headers.indexOf("Empresa lead 's");
-      const idxCompanyContact = headers.indexOf('Empresa do contato');
-      const idxPhone1 = headers.findIndex(h => h.includes('Telefone comercial'));
-      const idxPhone2 = headers.findIndex(h => h.includes('Celular'));
-      const idxEmail = headers.findIndex(h => h.includes('Email'));
-      const idxCity = headers.indexOf('Cidade');
-      const idxState = headers.indexOf('UF');
-      const idxInstagram = headers.findIndex(h => h.includes('Instagram'));
-      const idxLinkedin = headers.findIndex(h => h.includes('LinkedIn'));
-      const idxOwner = headers.indexOf('Lead usuário responsável');
-      const idxDate = headers.indexOf('Data Criada');
-      const idxValue = headers.indexOf('Venda');
-      const noteIndices = headers.map((h, i) => h.startsWith('Nota') ? i : -1).filter(i => i !== -1);
+      // Busca Inteligente de Colunas
+      const idxName = headers.findIndex(h => h.includes('nome') || h.includes('name') || h.includes('cliente') || h.includes('lead título') || h.includes('contato principal'));
+      const idxCompany = headers.findIndex(h => h.includes('empresa') || h.includes('company'));
+      const idxEmail = headers.findIndex(h => h.includes('email'));
+      const idxPhone = headers.findIndex(h => h.includes('telefone') || h.includes('phone') || h.includes('celular') || h.includes('whatsapp'));
+      const idxValue = headers.findIndex(h => h.includes('valor') || h.includes('budget') || h.includes('venda') || h.includes('orcamento'));
+      const idxSource = headers.findIndex(h => h.includes('origem') || h.includes('fonte') || h.includes('source'));
+      const idxNotes = headers.findIndex(h => h.includes('nota') || h.includes('obs') || h.includes('descricao'));
+      
+      const kommoNoteIndices = headers.map((h, i) => h.includes('nota') ? i : -1).filter(i => i !== -1);
+
+      if (idxName === -1) {
+          toast({ title: "Erro de Formato", description: `Não encontrei a coluna 'Nome' ou 'Cliente'. Separador detectado: '${separator}'`, variant: "destructive" });
+          return;
+      }
 
       for (let i = 1; i < lines.length; i++) {
         if (!lines[i].trim()) continue;
         const cols = parseCSVLine(lines[i]).map(c => c.replace(/^"|"$/g, ''));
 
-        const name = cols[idxName] !== 'nan' && cols[idxName] ? cols[idxName] : (cols[idxContactName] !== 'nan' ? cols[idxContactName] : 'Lead Sem Nome');
-        const company = cols[idxCompany] !== 'nan' && cols[idxCompany] ? cols[idxCompany] : (cols[idxCompanyContact] !== 'nan' ? cols[idxCompanyContact] : '');
-        
-        if (!name || name === 'nan') continue;
+        const name = cols[idxName];
+        if (!name || name === 'nan' || name.trim() === '') continue;
 
         let notes = '';
-        noteIndices.forEach(idx => { if (cols[idx] && cols[idx] !== 'nan') notes += `\n${cols[idx]}`; });
+        if (kommoNoteIndices.length > 1) {
+             kommoNoteIndices.forEach(idx => { if (cols[idx] && cols[idx] !== 'nan') notes += `\n- ${cols[idx]}`; });
+        } else if (idxNotes > -1) {
+             notes = cols[idxNotes];
+        }
 
         newLeads.push({
             name: name,
-            company: company,
-            email: idxEmail > -1 && cols[idxEmail] !== 'nan' ? cols[idxEmail] : '',
-            phone: idxPhone1 > -1 && cols[idxPhone1] !== 'nan' ? cols[idxPhone1] : '',
-            phone_secondary: idxPhone2 > -1 && cols[idxPhone2] !== 'nan' ? cols[idxPhone2] : '',
-            budget: idxValue > -1 && cols[idxValue] !== 'nan' ? cols[idxValue] : '0',
-            city: idxCity > -1 && cols[idxCity] !== 'nan' ? cols[idxCity] : '',
-            state: idxState > -1 && cols[idxState] !== 'nan' ? cols[idxState] : '',
-            instagram: idxInstagram > -1 && cols[idxInstagram] !== 'nan' ? cols[idxInstagram] : '',
-            linkedin: idxLinkedin > -1 && cols[idxLinkedin] !== 'nan' ? cols[idxLinkedin] : '',
-            owner_name: idxOwner > -1 && cols[idxOwner] !== 'nan' ? cols[idxOwner] : '',
+            company: idxCompany > -1 ? cols[idxCompany] : '',
+            email: idxEmail > -1 ? cols[idxEmail] : '',
+            phone: idxPhone > -1 ? cols[idxPhone] : '',
+            budget: idxValue > -1 ? cols[idxValue] : '0',
+            source: idxSource > -1 ? cols[idxSource] : 'import_planilha',
+            notes: notes ? notes.trim() : '',
             status: firstStageId,
-            source: 'import_kommo',
             pipeline_id: currentPipelineId,
             temperature: 'morno',
-            created_at: idxDate > -1 ? parseKommoDate(cols[idxDate]) : new Date().toISOString(),
-            notes: notes.trim()
+            created_at: new Date().toISOString() 
         });
       }
 
       if (newLeads.length > 0) {
         const { error } = await supabase.from('leads').insert(newLeads);
-        if (error) { 
-            console.error(error); 
-            toast({ title: "Erro na importação", description: "Verifique o formato.", variant: "destructive" }); 
-        } else { 
-            toast({ title: "Sucesso!", description: `${newLeads.length} leads importados.` }); 
-            fetchLeads(currentPipelineId); 
-        }
+        if (error) { console.error(error); toast({ title: "Erro na importação", description: "Verifique o formato.", variant: "destructive" }); } 
+        else { toast({ title: "Sucesso!", description: `${newLeads.length} leads importados.` }); fetchLeads(currentPipelineId); }
       }
     };
     reader.readAsText(file);
@@ -334,18 +335,13 @@ export default function CRMPage() {
 
   const handleExportLeads = () => {
     if (!leads || leads.length === 0) { toast({ title: "Nada para exportar", description: "Não há leads no funil.", variant: "destructive" }); return; }
-    const headers = ["Nome", "Empresa", "Email", "Telefone", "Tel. Secundario", "Cidade", "UF", "Valor", "Status", "Fonte", "Instagram", "Responsavel", "Notas"];
+    const headers = ["Nome", "Empresa", "Email", "Telefone", "Valor", "Status", "Fonte", "Notas"];
     const csvRows = [
       headers.join(','),
       ...leads.map(lead => {
         const row = [
-          `"${lead.title || ''}"`, `"${lead.company || ''}"`, `"${lead.email || ''}"`, 
-          `"${lead.phone || ''}"`, `"${lead.phone_secondary || ''}"`,
-          `"${lead.city || ''}"`, `"${lead.state || ''}"`,
-          `"${lead.budget || 0}"`,
-          `"${stages.find(s => s.id === lead.status)?.name || lead.status}"`, 
-          `"${lead.source || ''}"`, `"${lead.instagram || ''}"`, `"${lead.owner_name || ''}"`,
-          `"${(lead.notes || '').replace(/"/g, '""')}"`
+          `"${lead.title || ''}"`, `"${lead.company || ''}"`, `"${lead.email || ''}"`, `"${lead.phone || ''}"`, `"${lead.budget || 0}"`,
+          `"${stages.find(s => s.id === lead.status)?.name || lead.status}"`, `"${lead.source || ''}"`, `"${(lead.notes || '').replace(/"/g, '""')}"`
         ];
         return row.join(',');
       })
@@ -359,7 +355,7 @@ export default function CRMPage() {
     document.body.removeChild(link);
   };
 
-  // --- ACTIONS ---
+  // --- ACTIONS ORIGINAIS (MANTIDAS) ---
   const handleAddNote = async () => {
     if (!selectedLead || !newNote.trim()) return;
     const { error } = await supabase.from('lead_activities').insert({ lead_id: selectedLead.id, type: 'note', content: newNote });
@@ -765,8 +761,8 @@ export default function CRMPage() {
                           <div className="flex flex-wrap gap-2 mt-2">
                                {selectedLead.company && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><FileText className="h-3 w-3"/> {selectedLead.company}</span>}
                                {selectedLead.city && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><MapPin className="h-3 w-3"/> {selectedLead.city}/{selectedLead.state}</span>}
-                               {selectedLead.instagram && <a href={selectedLead.instagram.includes('http') ? selectedLead.instagram : `https://instagram.com/${selectedLead.instagram.replace('@','')}`} target="_blank" className="px-2 py-1 bg-pink-100 text-pink-700 rounded text-xs flex items-center gap-1"><Instagram className="h-3 w-3"/> Insta</a>}
-                               {selectedLead.linkedin && <a href={selectedLead.linkedin} target="_blank" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs flex items-center gap-1"><Linkedin className="h-3 w-3"/> LinkedIn</a>}
+                               {selectedLead.instagram && <a href={selectedLead.instagram.includes('http') ? selectedLead.instagram : `https://instagram.com/${selectedLead.instagram.replace('@','')}`} target="_blank" className="px-2 py-1 bg-pink-100 text-pink-700 rounded text-xs flex items-center gap-1"><Globe className="h-3 w-3"/> Insta</a>}
+                               {selectedLead.linkedin && <a href={selectedLead.linkedin} target="_blank" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs flex items-center gap-1"><LinkIcon className="h-3 w-3"/> LinkedIn</a>}
                           </div>
                           {selectedLead.phone_secondary && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Phone className="h-3 w-3"/> Tel 2: {formatPhone(selectedLead.phone_secondary)}</p>}
                           {selectedLead.owner_name && <p className="text-xs text-slate-500 mt-1">Dono: {selectedLead.owner_name}</p>}
@@ -777,9 +773,7 @@ export default function CRMPage() {
                       </div>
                   </div>
                   {selectedLead.notes && <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-900/30 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap"><strong>Notas/Histórico:</strong><br/>{selectedLead.notes}</div>}
-                  {/* TAREFAS */}
                   <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 mb-6"><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><ListTodo className="h-4 w-4" /> Tarefas</h3><div className="flex gap-2 mb-4"><Input placeholder="Nova tarefa..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="dark:bg-slate-950"/><Input type="datetime-local" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className="w-40 dark:bg-slate-950"/><Button size="sm" onClick={handleAddTask}><Plus className="h-4 w-4" /></Button></div><div className="space-y-2 max-h-60 overflow-y-auto">{tasks.map(task => (<div key={task.id} className="flex items-center gap-3 p-2 bg-white dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-800"><input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task.id, task.is_completed)} className="w-4 h-4 rounded"/><div className={`flex-1 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}><p className="text-sm font-medium">{task.title}</p><p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleString('pt-BR')}</p></div></div>))}</div></div>
-                  {/* HISTÓRICO */}
                   <div><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><History className="h-4 w-4" /> Histórico & Notas</h3><div className="flex gap-2 mb-6"><Input placeholder="Adicionar nota..." value={newNote} onChange={e => setNewNote(e.target.value)} className="dark:bg-slate-900"/><Button size="sm" onClick={handleAddNote}>Enviar</Button></div><div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-3 space-y-6 pb-10">{activities.map((act) => (<div key={act.id} className="relative pl-6"><div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-950 ${act.type === 'status_change' ? 'bg-blue-500' : act.type === 'task_created' ? 'bg-orange-500' : 'bg-slate-400'}`}></div><div className="text-xs text-slate-400 mb-1">{new Date(act.created_at).toLocaleString('pt-BR')}</div><div className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg text-sm text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">{act.content}</div></div>))}</div></div>
               </div>
           </div>
