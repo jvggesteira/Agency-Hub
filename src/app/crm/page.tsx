@@ -6,19 +6,12 @@ import { Header } from '@/components/custom/header';
 import { KanbanColumn } from '@/components/custom/kanban-column';
 import { SortableTaskCard } from '@/components/custom/sortable-task-card';
 import { 
-  DndContext, 
-  DragEndEvent, 
-  pointerWithin,
-  useSensor,
-  useSensors,
-  PointerSensor,
-  KeyboardSensor,
-  TouchSensor
+  DndContext, DragEndEvent, pointerWithin, useSensor, useSensors, PointerSensor, KeyboardSensor, TouchSensor
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { 
-  Plus, UserPlus, X, ListTodo, History, Clock, Search, Copy, Upload, Download, FileText, CheckCircle, AlertCircle, 
-  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown
+  Plus, UserPlus, X, ListTodo, History, Search, Copy, Upload, Download, FileText, CheckCircle, 
+  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Linkedin, Instagram, Phone
 } from 'lucide-react';
 import { usePermission } from '@/hooks/use-permission';
 import AccessDenied from '@/components/custom/access-denied';
@@ -35,6 +28,7 @@ const leadSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   phone: z.string().optional(),
+  phone_secondary: z.string().optional(),
   company: z.string().optional(),
   budget: z.string().optional(),
   source: z.string().optional(),
@@ -42,52 +36,24 @@ const leadSchema = z.object({
   notes: z.string().optional(),
   status: z.string(), 
   temperature: z.enum(['quente', 'morno', 'frio']).optional(),
+  instagram: z.string().optional(),
+  linkedin: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  owner_name: z.string().optional(),
 });
 type LeadFormData = z.infer<typeof leadSchema>;
 
 // Tipos
-interface Pipeline {
-  id: string;
-  name: string;
-}
-
-interface PipelineStage {
-  id: string;
-  pipeline_id: string;
-  name: string;
-  position: number;
-  color: string;
-}
-
-interface LeadActivity {
-  id: string;
-  type: 'note' | 'status_change' | 'task_created' | 'task_completed';
-  content: string;
-  created_at: string;
-}
-
-interface LeadTask {
-  id: string;
-  title: string;
-  due_date: string;
-  is_completed: boolean;
-}
-
-interface Lead {
-  id: string;
-  title: string;
-  description?: string;
-  priority: string; 
-  temperature: 'quente' | 'morno' | 'frio'; 
-  status: string;
-  email: string;
-  phone: string;
-  company: string;
-  budget: string;
-  source: string;
-  created_at: string;
-  notes?: string;
-  pipeline_id?: string;
+interface Pipeline { id: string; name: string; }
+interface PipelineStage { id: string; pipeline_id: string; name: string; position: number; color: string; }
+interface LeadActivity { id: string; type: 'note' | 'status_change' | 'task_created' | 'task_completed'; content: string; created_at: string; }
+interface LeadTask { id: string; title: string; due_date: string; is_completed: boolean; }
+interface Lead { 
+  id: string; title: string; description?: string; priority: string; temperature: 'quente' | 'morno' | 'frio'; 
+  status: string; email: string; phone: string; phone_secondary?: string; company: string; budget: string; 
+  source: string; created_at: string; notes?: string; pipeline_id?: string; instagram?: string; linkedin?: string; 
+  city?: string; state?: string; owner_name?: string;
 }
 
 const SOURCES = [
@@ -99,6 +65,7 @@ const SOURCES = [
     { value: 'networking', label: 'Networking' },
     { value: 'eventos', label: 'Eventos' },
     { value: 'site', label: 'Site' },
+    { value: 'import_kommo', label: 'Importado Kommo' },
 ];
 
 // --- FUNÇÕES DE FORMATAÇÃO ---
@@ -129,6 +96,16 @@ const parseCurrency = (value?: string) => {
 
 const formatCurrencyDisplay = (value: number) => {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const parseKommoDate = (dateStr: string) => {
+    if (!dateStr) return new Date().toISOString();
+    try {
+        const [datePart, timePart] = dateStr.split(' ');
+        const [day, month, year] = datePart.split('.');
+        if (timePart) return new Date(`${year}-${month}-${day}T${timePart}`).toISOString();
+        return new Date(`${year}-${month}-${day}T12:00:00`).toISOString();
+    } catch (e) { return new Date().toISOString(); }
 };
 
 export default function CRMPage() {
@@ -174,7 +151,6 @@ export default function CRMPage() {
     resolver: zodResolver(leadSchema),
   });
 
-  // --- CONFIGURAÇÃO DE SENSORES PARA DRAG AND DROP ---
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -232,7 +208,7 @@ export default function CRMPage() {
   const fetchLeads = async (pipelineId: string) => {
     const { data } = await supabase.from('leads').select('*').eq('pipeline_id', pipelineId).order('created_at', { ascending: false });
     if (data) {
-      const formattedLeads: Lead[] = data.map(l => ({
+      const formattedLeads: Lead[] = data.map((l: any) => ({
         id: l.id,
         title: l.name,
         description: l.company || l.email,
@@ -241,12 +217,19 @@ export default function CRMPage() {
         status: l.status,
         email: l.email,
         phone: l.phone || '',
+        phone_secondary: l.phone_secondary || '',
         company: l.company || '',
-        budget: l.budget || '',
+        // Força conversão para string para evitar erro de tipo
+        budget: String(l.budget || l.value || ''), 
         source: l.source || 'manual',
         notes: l.notes || '',
         created_at: l.created_at,
-        pipeline_id: l.pipeline_id
+        pipeline_id: l.pipeline_id,
+        instagram: l.instagram || '',
+        linkedin: l.linkedin || '',
+        city: l.city || '',
+        state: l.state || '',
+        owner_name: l.owner_name || ''
       }));
       setLeads(formattedLeads);
     }
@@ -260,16 +243,109 @@ export default function CRMPage() {
     if (tsks) setTasks(tsks);
   };
 
-  // --- NOVAS FUNÇÕES: IMPORTAR E EXPORTAR ---
+  // --- IMPORTAR KOMMO (CSV ROBUSTO) ---
+  const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!currentPipelineId || stages.length === 0) { toast({ title: "Erro", description: "Carregue o pipeline primeiro.", variant: "destructive" }); return; }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      
+      const parseCSVLine = (line: string) => {
+          const values = []; let current = ''; let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+              const char = line[i]; if (char === '"') { inQuotes = !inQuotes; } else if (char === ',' && !inQuotes) { values.push(current.trim()); current = ''; } else { current += char; }
+          }
+          values.push(current.trim()); return values;
+      };
+
+      const lines = text.split('\n'); if (lines.length < 2) return;
+      const headers = parseCSVLine(lines[0]).map(h => h.replace(/"/g, '').trim());
+      const newLeads = [];
+      const firstStageId = stages[0].id;
+
+      // Mapeamento Kommo
+      const idxName = headers.indexOf('Lead título');
+      const idxContactName = headers.indexOf('Contato principal');
+      const idxCompany = headers.indexOf("Empresa lead 's");
+      const idxCompanyContact = headers.indexOf('Empresa do contato');
+      const idxPhone1 = headers.findIndex(h => h.includes('Telefone comercial'));
+      const idxPhone2 = headers.findIndex(h => h.includes('Celular'));
+      const idxEmail = headers.findIndex(h => h.includes('Email'));
+      const idxCity = headers.indexOf('Cidade');
+      const idxState = headers.indexOf('UF');
+      const idxInstagram = headers.findIndex(h => h.includes('Instagram'));
+      const idxLinkedin = headers.findIndex(h => h.includes('LinkedIn'));
+      const idxOwner = headers.indexOf('Lead usuário responsável');
+      const idxDate = headers.indexOf('Data Criada');
+      const idxValue = headers.indexOf('Venda');
+      const noteIndices = headers.map((h, i) => h.startsWith('Nota') ? i : -1).filter(i => i !== -1);
+
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const cols = parseCSVLine(lines[i]).map(c => c.replace(/^"|"$/g, ''));
+
+        const name = cols[idxName] !== 'nan' && cols[idxName] ? cols[idxName] : (cols[idxContactName] !== 'nan' ? cols[idxContactName] : 'Lead Sem Nome');
+        const company = cols[idxCompany] !== 'nan' && cols[idxCompany] ? cols[idxCompany] : (cols[idxCompanyContact] !== 'nan' ? cols[idxCompanyContact] : '');
+        
+        if (!name || name === 'nan') continue;
+
+        let notes = '';
+        noteIndices.forEach(idx => { if (cols[idx] && cols[idx] !== 'nan') notes += `\n${cols[idx]}`; });
+
+        newLeads.push({
+            name: name,
+            company: company,
+            email: idxEmail > -1 && cols[idxEmail] !== 'nan' ? cols[idxEmail] : '',
+            phone: idxPhone1 > -1 && cols[idxPhone1] !== 'nan' ? cols[idxPhone1] : '',
+            phone_secondary: idxPhone2 > -1 && cols[idxPhone2] !== 'nan' ? cols[idxPhone2] : '',
+            budget: idxValue > -1 && cols[idxValue] !== 'nan' ? cols[idxValue] : '0',
+            city: idxCity > -1 && cols[idxCity] !== 'nan' ? cols[idxCity] : '',
+            state: idxState > -1 && cols[idxState] !== 'nan' ? cols[idxState] : '',
+            instagram: idxInstagram > -1 && cols[idxInstagram] !== 'nan' ? cols[idxInstagram] : '',
+            linkedin: idxLinkedin > -1 && cols[idxLinkedin] !== 'nan' ? cols[idxLinkedin] : '',
+            owner_name: idxOwner > -1 && cols[idxOwner] !== 'nan' ? cols[idxOwner] : '',
+            status: firstStageId,
+            source: 'import_kommo',
+            pipeline_id: currentPipelineId,
+            temperature: 'morno',
+            created_at: idxDate > -1 ? parseKommoDate(cols[idxDate]) : new Date().toISOString(),
+            notes: notes.trim()
+        });
+      }
+
+      if (newLeads.length > 0) {
+        const { error } = await supabase.from('leads').insert(newLeads);
+        if (error) { 
+            console.error(error); 
+            toast({ title: "Erro na importação", description: "Verifique o formato.", variant: "destructive" }); 
+        } else { 
+            toast({ title: "Sucesso!", description: `${newLeads.length} leads importados.` }); 
+            fetchLeads(currentPipelineId); 
+        }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; 
+  };
+
   const handleExportLeads = () => {
     if (!leads || leads.length === 0) { toast({ title: "Nada para exportar", description: "Não há leads no funil.", variant: "destructive" }); return; }
-    const headers = ["Nome", "Empresa", "Email", "Telefone", "Valor", "Status", "Fonte", "Notas"];
+    const headers = ["Nome", "Empresa", "Email", "Telefone", "Tel. Secundario", "Cidade", "UF", "Valor", "Status", "Fonte", "Instagram", "Responsavel", "Notas"];
     const csvRows = [
       headers.join(','),
       ...leads.map(lead => {
         const row = [
-          `"${lead.title || ''}"`, `"${lead.company || ''}"`, `"${lead.email || ''}"`, `"${lead.phone || ''}"`, `"${lead.budget || 0}"`,
-          `"${stages.find(s => s.id === lead.status)?.name || lead.status}"`, `"${lead.source || ''}"`, `"${lead.notes || ''}"`
+          `"${lead.title || ''}"`, `"${lead.company || ''}"`, `"${lead.email || ''}"`, 
+          `"${lead.phone || ''}"`, `"${lead.phone_secondary || ''}"`,
+          `"${lead.city || ''}"`, `"${lead.state || ''}"`,
+          `"${lead.budget || 0}"`,
+          `"${stages.find(s => s.id === lead.status)?.name || lead.status}"`, 
+          `"${lead.source || ''}"`, `"${lead.instagram || ''}"`, `"${lead.owner_name || ''}"`,
+          `"${(lead.notes || '').replace(/"/g, '""')}"`
         ];
         return row.join(',');
       })
@@ -283,44 +359,7 @@ export default function CRMPage() {
     document.body.removeChild(link);
   };
 
-  const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!currentPipelineId || stages.length === 0) { toast({ title: "Erro", description: "Carregue o pipeline primeiro.", variant: "destructive" }); return; }
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const text = event.target?.result as string;
-      if (!text) return;
-      const rows = text.split('\n').slice(1); // Pula cabeçalho
-      const newLeads = [];
-      const firstStageId = stages[0].id;
-
-      for (const row of rows) {
-        if (!row.trim()) continue;
-        // Tenta separar por vírgula ou ponto e vírgula, removendo aspas
-        const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/"/g, '').trim());
-        
-        // Mapeamento CSV (Nome, Empresa, Email, Telefone, Valor)
-        if (cols.length >= 2) { 
-            newLeads.push({
-                name: cols[0], company: cols[1] || '', email: cols[2] || '', phone: cols[3] || '',
-                budget: cols[4] || '', status: firstStageId, source: 'import_kommo',
-                pipeline_id: currentPipelineId, temperature: 'morno'
-            });
-        }
-      }
-
-      if (newLeads.length > 0) {
-        const { error } = await supabase.from('leads').insert(newLeads);
-        if (error) { console.error(error); toast({ title: "Erro na importação", description: "Verifique o formato.", variant: "destructive" }); } 
-        else { toast({ title: "Sucesso!", description: `${newLeads.length} leads importados.` }); fetchLeads(currentPipelineId); }
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = ''; 
-  };
-
+  // --- ACTIONS ---
   const handleAddNote = async () => {
     if (!selectedLead || !newNote.trim()) return;
     const { error } = await supabase.from('lead_activities').insert({ lead_id: selectedLead.id, type: 'note', content: newNote });
@@ -328,7 +367,7 @@ export default function CRMPage() {
   };
 
   const handleAddTask = async () => {
-    if (!selectedLead || !newTaskTitle.trim() || !newTaskDate) { toast({ title: "Erro", description: "Preencha o título e a data.", variant: "destructive" }); return; }
+    if (!selectedLead || !newTaskTitle.trim() || !newTaskDate) { toast({ title: "Erro", description: "Preencha o título.", variant: "destructive" }); return; }
     const { error } = await supabase.from('lead_tasks').insert({ lead_id: selectedLead.id, title: newTaskTitle, due_date: new Date(newTaskDate).toISOString(), is_completed: false });
     if (!error) {
       setNewTaskTitle(''); setNewTaskDate(''); fetchLeadDetails(selectedLead.id);
@@ -348,8 +387,10 @@ export default function CRMPage() {
       if (data.source === 'outro' && data.customSource) finalSource = data.customSource;
       const initialStatus = editingLead ? data.status : (stages[0]?.id || 'novo');
       const payload = {
-        name: data.name, email: data.email, phone: data.phone, company: data.company, notes: data.notes,
-        status: initialStatus, source: finalSource, budget: data.budget, pipeline_id: currentPipelineId, temperature: data.temperature || 'morno'
+        name: data.name, email: data.email, phone: data.phone, phone_secondary: data.phone_secondary,
+        company: data.company, notes: data.notes, status: initialStatus, source: finalSource, budget: data.budget, 
+        pipeline_id: currentPipelineId, temperature: data.temperature || 'morno',
+        instagram: data.instagram, linkedin: data.linkedin, city: data.city, state: data.state, owner_name: data.owner_name
       };
 
       if (editingLead) {
@@ -368,9 +409,11 @@ export default function CRMPage() {
     const standardSources = SOURCES.map(s => s.value);
     const isStandardSource = standardSources.includes(lead.source || '');
     reset({
-        name: lead.title, email: lead.email, phone: lead.phone, company: lead.company, budget: lead.budget,
-        source: isStandardSource ? lead.source : 'outro', customSource: isStandardSource ? '' : lead.source,
-        notes: lead.notes, status: lead.status, temperature: lead.temperature || 'morno'
+        name: lead.title, email: lead.email, phone: lead.phone, phone_secondary: lead.phone_secondary,
+        company: lead.company, budget: lead.budget, source: isStandardSource ? lead.source : 'outro', 
+        customSource: isStandardSource ? '' : lead.source, notes: lead.notes, status: lead.status, 
+        temperature: lead.temperature || 'morno', instagram: lead.instagram, linkedin: lead.linkedin,
+        city: lead.city, state: lead.state, owner_name: lead.owner_name
     });
     setIsModalOpen(true);
   }
@@ -605,7 +648,6 @@ export default function CRMPage() {
               </div>
             </div>
             
-            {/* BOTÕES DE AÇÃO: IMPORTAR/EXPORTAR/NOVO */}
             <div className="flex gap-3">
                 <div className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border dark:border-slate-800">
                     <span className="text-xs text-slate-500">Webhook:</span>
@@ -623,7 +665,7 @@ export default function CRMPage() {
                     <div className="relative">
                         <input type="file" accept=".csv" onChange={handleImportLeads} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                         <button className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium h-full">
-                            <Upload className="h-4 w-4"/> Importar
+                            <Upload className="h-4 w-4"/> Importar (Kommo)
                         </button>
                     </div>
                 )}
@@ -694,79 +736,51 @@ export default function CRMPage() {
         </main>
       </div>
 
-      {/* MODAL EDITAR/NOVO LEAD */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full p-6 border dark:border-slate-800 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between mb-4"><h2 className="text-xl font-bold dark:text-white">{editingLead ? 'Editar' : 'Novo'} Lead</h2><button onClick={() => setIsModalOpen(false)}><X/></button></div>
               <form onSubmit={handleSubmit(onModalSubmit)} className="space-y-4">
                 <input type="hidden" {...register('status')} /> 
-                <div className="grid grid-cols-2 gap-3"><Input {...register('name')} placeholder="Nome" className="dark:bg-slate-950" /><Input {...register('email')} placeholder="Email" className="dark:bg-slate-950" /></div>
-                <Input {...register('phone')} placeholder="Telefone" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatPhone(e.target.value); register('phone').onChange(e); }}/>
-                <Input {...register('company')} placeholder="Empresa" className="dark:bg-slate-950" />
-                <div className="grid grid-cols-2 gap-3">
-                    <Input {...register('budget')} placeholder="Orçamento" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatCurrencyInput(e.target.value); register('budget').onChange(e); }}/>
-                    <select {...register('temperature')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="morno">Morno</option><option value="quente">Quente</option><option value="frio">Frio</option></select>
-                </div>
+                <div className="grid grid-cols-2 gap-3"><Input {...register('name')} placeholder="Nome" className="dark:bg-slate-950" /><Input {...register('company')} placeholder="Empresa" className="dark:bg-slate-950" /></div>
+                <div className="grid grid-cols-2 gap-3"><Input {...register('email')} placeholder="Email" className="dark:bg-slate-950" /><Input {...register('phone')} placeholder="Telefone" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatPhone(e.target.value); register('phone').onChange(e); }}/></div>
+                <div className="grid grid-cols-2 gap-3"><Input {...register('phone_secondary')} placeholder="Telefone 2" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatPhone(e.target.value); register('phone_secondary').onChange(e); }} /><Input {...register('owner_name')} placeholder="Dono do Lead" className="dark:bg-slate-950" /></div>
+                <div className="grid grid-cols-2 gap-3"><Input {...register('city')} placeholder="Cidade" className="dark:bg-slate-950" /><Input {...register('state')} placeholder="UF" className="dark:bg-slate-950" /></div>
+                <div className="grid grid-cols-2 gap-3"><Input {...register('instagram')} placeholder="Instagram (Link ou @)" className="dark:bg-slate-950" /><Input {...register('linkedin')} placeholder="LinkedIn" className="dark:bg-slate-950" /></div>
+                <div className="grid grid-cols-2 gap-3"><Input {...register('budget')} placeholder="Orçamento" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatCurrencyInput(e.target.value); register('budget').onChange(e); }}/><select {...register('temperature')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="morno">Morno</option><option value="quente">Quente</option><option value="frio">Frio</option></select></div>
                 <select {...register('source')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="">Fonte...</option>{SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}<option value="outro">Outro</option></select>
-                <textarea {...register('notes')} placeholder="Notas" className="w-full px-3 py-2 border dark:border-slate-800 rounded-lg bg-transparent dark:text-white" />
+                <textarea {...register('notes')} placeholder="Notas / Observações / Histórico" className="w-full px-3 py-2 border dark:border-slate-800 rounded-lg bg-transparent dark:text-white min-h-[100px]" />
                 <Button type="submit" className="w-full bg-slate-900 dark:bg-white dark:text-slate-900">Salvar</Button>
               </form>
            </div>
         </div>
       )}
 
-      {/* MODAL DETALHES */}
       {isDetailModalOpen && selectedLead && (
           <div className="fixed inset-0 bg-black/60 z-50 flex justify-end">
               <div className="w-full max-w-xl bg-white dark:bg-slate-950 h-full shadow-2xl p-6 border-l dark:border-slate-800 overflow-y-auto animate-in slide-in-from-right">
                   <div className="flex justify-between items-start mb-6">
                       <div>
                           <h2 className="text-2xl font-bold dark:text-white">{selectedLead.title}</h2>
-                          <div className="flex gap-2 mt-2">
-                               <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs">{selectedLead.company}</span>
-                              <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => openTransferModal(selectedLead)}><ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir Lead</Button>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                               {selectedLead.company && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><FileText className="h-3 w-3"/> {selectedLead.company}</span>}
+                               {selectedLead.city && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><MapPin className="h-3 w-3"/> {selectedLead.city}/{selectedLead.state}</span>}
+                               {selectedLead.instagram && <a href={selectedLead.instagram.includes('http') ? selectedLead.instagram : `https://instagram.com/${selectedLead.instagram.replace('@','')}`} target="_blank" className="px-2 py-1 bg-pink-100 text-pink-700 rounded text-xs flex items-center gap-1"><Instagram className="h-3 w-3"/> Insta</a>}
+                               {selectedLead.linkedin && <a href={selectedLead.linkedin} target="_blank" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs flex items-center gap-1"><Linkedin className="h-3 w-3"/> LinkedIn</a>}
                           </div>
+                          {selectedLead.phone_secondary && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Phone className="h-3 w-3"/> Tel 2: {formatPhone(selectedLead.phone_secondary)}</p>}
+                          {selectedLead.owner_name && <p className="text-xs text-slate-500 mt-1">Dono: {selectedLead.owner_name}</p>}
                       </div>
-                      <button onClick={() => setIsDetailModalOpen(false)}><X/></button>
+                      <div className="flex gap-2">
+                          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openTransferModal(selectedLead)}><ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir</Button>
+                          <button onClick={() => setIsDetailModalOpen(false)}><X/></button>
+                      </div>
                   </div>
-
-                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 mb-6">
-                        <h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><ListTodo className="h-4 w-4" /> Tarefas</h3>
-                        <div className="flex gap-2 mb-4">
-                            <Input placeholder="Nova tarefa..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="dark:bg-slate-950"/>
-                            <Input type="datetime-local" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className="w-40 dark:bg-slate-950"/>
-                            <Button size="sm" onClick={handleAddTask}><Plus className="h-4 w-4" /></Button>
-                        </div>
-                        <div className="space-y-2 max-h-60 overflow-y-auto">
-                            {tasks.map(task => (
-                                <div key={task.id} className="flex items-center gap-3 p-2 bg-white dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-800">
-                                    <input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task.id, task.is_completed)} className="w-4 h-4 rounded"/>
-                                    <div className={`flex-1 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                                        <p className="text-sm font-medium">{task.title}</p>
-                                        <p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleString('pt-BR')}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                  </div>
-
-                  <div>
-                        <h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><History className="h-4 w-4" /> Histórico & Notas</h3>
-                        <div className="flex gap-2 mb-6">
-                            <Input placeholder="Adicionar nota..." value={newNote} onChange={e => setNewNote(e.target.value)} className="dark:bg-slate-900"/>
-                            <Button size="sm" onClick={handleAddNote}>Enviar</Button>
-                        </div>
-                        <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-3 space-y-6 pb-10">
-                            {activities.map((act) => (
-                                <div key={act.id} className="relative pl-6">
-                                    <div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-950 ${act.type === 'status_change' ? 'bg-blue-500' : act.type === 'task_created' ? 'bg-orange-500' : 'bg-slate-400'}`}></div>
-                                    <div className="text-xs text-slate-400 mb-1">{new Date(act.created_at).toLocaleString('pt-BR')}</div>
-                                    <div className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg text-sm text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">{act.content}</div>
-                                </div>
-                            ))}
-                        </div>
-                  </div>
+                  {selectedLead.notes && <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-900/30 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap"><strong>Notas/Histórico:</strong><br/>{selectedLead.notes}</div>}
+                  {/* TAREFAS */}
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 mb-6"><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><ListTodo className="h-4 w-4" /> Tarefas</h3><div className="flex gap-2 mb-4"><Input placeholder="Nova tarefa..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="dark:bg-slate-950"/><Input type="datetime-local" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className="w-40 dark:bg-slate-950"/><Button size="sm" onClick={handleAddTask}><Plus className="h-4 w-4" /></Button></div><div className="space-y-2 max-h-60 overflow-y-auto">{tasks.map(task => (<div key={task.id} className="flex items-center gap-3 p-2 bg-white dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-800"><input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task.id, task.is_completed)} className="w-4 h-4 rounded"/><div className={`flex-1 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}><p className="text-sm font-medium">{task.title}</p><p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleString('pt-BR')}</p></div></div>))}</div></div>
+                  {/* HISTÓRICO */}
+                  <div><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><History className="h-4 w-4" /> Histórico & Notas</h3><div className="flex gap-2 mb-6"><Input placeholder="Adicionar nota..." value={newNote} onChange={e => setNewNote(e.target.value)} className="dark:bg-slate-900"/><Button size="sm" onClick={handleAddNote}>Enviar</Button></div><div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-3 space-y-6 pb-10">{activities.map((act) => (<div key={act.id} className="relative pl-6"><div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-950 ${act.type === 'status_change' ? 'bg-blue-500' : act.type === 'task_created' ? 'bg-orange-500' : 'bg-slate-400'}`}></div><div className="text-xs text-slate-400 mb-1">{new Date(act.created_at).toLocaleString('pt-BR')}</div><div className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg text-sm text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">{act.content}</div></div>))}</div></div>
               </div>
           </div>
       )}
@@ -777,19 +791,8 @@ export default function CRMPage() {
               <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
                   <h3 className="font-bold mb-4 dark:text-white">Transferir Lead</h3>
                   <div className="space-y-4">
-                      <div>
-                          <label className="text-sm">Funil de Destino</label>
-                          <select className="w-full p-2 border rounded dark:bg-slate-950" value={transferTargetPipeline} onChange={e => setTransferTargetPipeline(e.target.value)}>
-                              <option value="">Selecione...</option>
-                              {pipelines.filter(p => p.id !== currentPipelineId).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
-                      </div>
-                      <div>
-                          <label className="text-sm">Etapa de Destino</label>
-                          <select className="w-full p-2 border rounded dark:bg-slate-950" value={transferTargetStage} onChange={e => setTransferTargetStage(e.target.value)} disabled={!transferTargetPipeline}>
-                              {targetStages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
-                      </div>
+                      <div><label className="text-sm">Funil de Destino</label><select className="w-full p-2 border rounded dark:bg-slate-950" value={transferTargetPipeline} onChange={e => setTransferTargetPipeline(e.target.value)}><option value="">Selecione...</option>{pipelines.filter(p => p.id !== currentPipelineId).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+                      <div><label className="text-sm">Etapa de Destino</label><select className="w-full p-2 border rounded dark:bg-slate-950" value={transferTargetStage} onChange={e => setTransferTargetStage(e.target.value)} disabled={!transferTargetPipeline}>{targetStages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                       <Button className="w-full bg-slate-900 dark:bg-white dark:text-slate-900" onClick={handleTransferLead} disabled={!transferTargetStage}>Confirmar Transferência</Button>
                       <Button variant="ghost" className="w-full" onClick={() => setIsTransferModalOpen(false)}>Cancelar</Button>
                   </div>
@@ -809,8 +812,7 @@ export default function CRMPage() {
               <div className={`bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border-2 border-dashed transition-colors mb-6 text-center ${!contractFile ? 'border-slate-300' : 'border-green-500 bg-green-50'}`}>
                   <input type="file" id="contract-upload" className="hidden" onChange={(e) => setContractFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.jpg,.png,.jpeg"/>
                   <label htmlFor="contract-upload" className="cursor-pointer flex flex-col items-center gap-2">
-                      {contractFile ? <><FileText className="h-8 w-8 text-green-500" /><span className="text-sm font-medium truncate max-w-[200px]">{contractFile.name}</span></> : <><Upload className="h-8 w-8 text-slate-400" /><span className="text-sm font-medium text-slate-600">Clique para selecionar</span></>}
-                  </label>
+                      {contractFile ? <><FileText className="h-8 w-8 text-green-500" /><span className="text-sm font-medium truncate max-w-[200px]">{contractFile.name}</span></> : <><Upload className="h-8 w-8 text-slate-400" /><span className="text-sm font-medium text-slate-600">Clique para selecionar</span></>}</label>
               </div>
               <div className="flex gap-3">
                   <Button variant="outline" onClick={handleCancelWin} className="flex-1">Cancelar</Button>
