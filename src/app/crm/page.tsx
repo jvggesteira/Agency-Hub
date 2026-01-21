@@ -11,7 +11,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { 
   Plus, UserPlus, X, ListTodo, History, Search, Copy, Upload, Download, FileText, CheckCircle, 
-  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Linkedin, Instagram, Phone, Globe, Link as LinkIcon
+  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Globe, Link as LinkIcon, Phone
 } from 'lucide-react';
 import { usePermission } from '@/hooks/use-permission';
 import AccessDenied from '@/components/custom/access-denied';
@@ -42,6 +42,7 @@ const leadSchema = z.object({
   state: z.string().optional(),
   owner_name: z.string().optional(),
 });
+
 type LeadFormData = z.infer<typeof leadSchema>;
 
 // Tipos
@@ -50,9 +51,10 @@ interface PipelineStage { id: string; pipeline_id: string; name: string; positio
 interface LeadActivity { id: string; type: 'note' | 'status_change' | 'task_created' | 'task_completed'; content: string; created_at: string; }
 interface LeadTask { id: string; title: string; due_date: string; is_completed: boolean; }
 interface Lead { 
-  id: string; title: string; description?: string; priority: string; temperature: 'quente' | 'morno' | 'frio'; 
+  id: string; title: string; description?: string; priority: string; temperature: 'quente' | 'morno' | 'frio';
   status: string; email: string; phone: string; phone_secondary?: string; company: string; budget: string; 
-  source: string; created_at: string; notes?: string; pipeline_id?: string; instagram?: string; linkedin?: string; 
+  source: string; created_at: string; notes?: string; pipeline_id?: string;
+  instagram?: string; linkedin?: string; 
   city?: string; state?: string; owner_name?: string;
 }
 
@@ -65,11 +67,10 @@ const SOURCES = [
     { value: 'networking', label: 'Networking' },
     { value: 'eventos', label: 'Eventos' },
     { value: 'site', label: 'Site' },
-    { value: 'import_kommo', label: 'Importado Kommo' },
     { value: 'import_planilha', label: 'Importado Planilha' },
+    { value: 'import_kommo', label: 'Importado Kommo' },
 ];
 
-// --- FUNÇÕES DE FORMATAÇÃO ---
 const formatPhone = (value: string) => {
   if (!value) return "";
   value = value.replace(/\D/g, "");
@@ -99,15 +100,53 @@ const formatCurrencyDisplay = (value: number) => {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const parseKommoDate = (dateStr: string) => {
-    if (!dateStr) return new Date().toISOString();
-    try {
-        const [datePart, timePart] = dateStr.split(' ');
-        if (!datePart) return new Date().toISOString();
-        const [day, month, year] = datePart.split('.');
-        if (timePart) return new Date(`${year}-${month}-${day}T${timePart}`).toISOString();
-        return new Date(`${year}-${month}-${day}T12:00:00`).toISOString();
-    } catch (e) { return new Date().toISOString(); }
+// --- PARSER CSV AVANÇADO E INTELIGENTE ---
+const parseCSVRobust = (text: string): string[][] => {
+  // Normaliza quebras de linha
+  const cleanText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
+  // Detecta separador (prioriza ; se houver conflito, mas aceita ,)
+  const firstLineEnd = cleanText.indexOf('\n');
+  const firstLine = cleanText.substring(0, firstLineEnd > -1 ? firstLineEnd : cleanText.length);
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semiCount = (firstLine.match(/;/g) || []).length;
+  const separator = semiCount >= commaCount ? ';' : ',';
+
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < cleanText.length; i++) {
+    const char = cleanText[i];
+    const nextChar = cleanText[i + 1];
+
+    if (char === '"') {
+      if (insideQuotes && nextChar === '"') {
+        currentCell += '"'; 
+        i++;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === separator && !insideQuotes) {
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if (char === '\n' && !insideQuotes) {
+      currentRow.push(currentCell.trim());
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = '';
+    } else {
+      currentCell += char;
+    }
+  }
+  
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    rows.push(currentRow);
+  }
+
+  return rows;
 };
 
 export default function CRMPage() {
@@ -124,14 +163,14 @@ export default function CRMPage() {
   const [isWonModalOpen, setIsWonModalOpen] = useState(false);
   const [isPipelineSettingsOpen, setIsPipelineSettingsOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-  
-  // Estados de Edição
+
+  // Estados
   const [pendingLeadToConvert, setPendingLeadToConvert] = useState<Lead | null>(null);
   const [contractFile, setContractFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  
+
   // Atividades
   const [activities, setActivities] = useState<LeadActivity[]>([]);
   const [tasks, setTasks] = useState<LeadTask[]>([]);
@@ -139,8 +178,8 @@ export default function CRMPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDate, setNewTaskDate] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
-  
-  // Filtros e Config
+
+  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [transferTargetPipeline, setTransferTargetPipeline] = useState('');
@@ -148,7 +187,7 @@ export default function CRMPage() {
   const [targetStages, setTargetStages] = useState<PipelineStage[]>([]);
   const [editPipelineName, setEditPipelineName] = useState('');
   const [newStageName, setNewStageName] = useState('');
-  
+
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<LeadFormData>({
     resolver: zodResolver(leadSchema),
   });
@@ -244,89 +283,117 @@ export default function CRMPage() {
     if (tsks) setTasks(tsks);
   };
 
-  // --- FUNÇÕES NOVAS DE IMPORTAR/EXPORTAR (INJETADAS) ---
+  // --- IMPORTADOR INTELIGENTE (Corrigido para o seu Modelo) ---
   const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!currentPipelineId || stages.length === 0) { toast({ title: "Erro", description: "Carregue o pipeline primeiro.", variant: "destructive" }); return; }
+    
+    if (!currentPipelineId || stages.length === 0) { 
+      toast({ title: "Erro", description: "Carregue o pipeline primeiro.", variant: "destructive" });
+      return; 
+    }
 
     const reader = new FileReader();
     reader.onload = async (event) => {
       let text = event.target?.result as string;
       if (!text) return;
-      
-      // Remove BOM (caractere invisivel do Excel)
+
+      // Remove BOM
       if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
 
-      // Detecta separador automaticamente (; ou ,)
-      const firstLine = text.split('\n')[0];
-      const separator = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+      const rows = parseCSVRobust(text);
 
-      const parseCSVLine = (line: string) => {
-          const values = []; let current = ''; let inQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-              const char = line[i]; 
-              if (char === '"') { inQuotes = !inQuotes; } 
-              else if (char === separator && !inQuotes) { values.push(current.trim()); current = ''; } 
-              else { current += char; }
-          }
-          values.push(current.trim()); return values;
-      };
+      if (rows.length < 2) { 
+        toast({ title: "Arquivo Inválido", description: "Arquivo vazio ou incorreto.", variant: "destructive" }); 
+        return;
+      }
 
-      const lines = text.split('\n'); if (lines.length < 2) return;
-      const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/"/g, '').trim());
-      const newLeads = [];
+      // -- CORREÇÃO PARA O SEU MODELO (A, B, C...) --
+      // Verifica se a primeira linha é lixo (A,B,C,D...) e a ignora
+      let headers = rows[0].map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
+      let startRowIndex = 1;
+
+      // Se a primeira linha for A, B, C..., pegamos a segunda como cabeçalho
+      if (headers.length > 0 && headers[0] === 'a' && headers[1] === 'b') {
+         headers = rows[1].map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
+         startRowIndex = 2; // Começa a ler dados da terceira linha
+         console.log("Detectado modelo com cabeçalho A,B,C... Ajustando.");
+      }
+      
+      const newLeads: any[] = [];
       const firstStageId = stages[0].id;
 
-      // Busca Inteligente de Colunas
-      const idxName = headers.findIndex(h => h.includes('nome') || h.includes('name') || h.includes('cliente') || h.includes('lead título') || h.includes('contato principal'));
-      const idxCompany = headers.findIndex(h => h.includes('empresa') || h.includes('company'));
-      const idxEmail = headers.findIndex(h => h.includes('email'));
-      const idxPhone = headers.findIndex(h => h.includes('telefone') || h.includes('phone') || h.includes('celular') || h.includes('whatsapp'));
-      const idxValue = headers.findIndex(h => h.includes('valor') || h.includes('budget') || h.includes('venda') || h.includes('orcamento'));
-      const idxSource = headers.findIndex(h => h.includes('origem') || h.includes('fonte') || h.includes('source'));
-      const idxNotes = headers.findIndex(h => h.includes('nota') || h.includes('obs') || h.includes('descricao'));
-      
-      const kommoNoteIndices = headers.map((h, i) => h.includes('nota') ? i : -1).filter(i => i !== -1);
+      const getIdx = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h === k || h.includes(k)));
+
+      const idxName = getIdx(['nome', 'name', 'cliente', 'lead', 'título', 'full name']);
+      const idxCompany = getIdx(['empresa', 'company', 'negócio']);
+      const idxEmail = getIdx(['email', 'e-mail']);
+      const idxPhone = getIdx(['telefone', 'phone', 'celular', 'whatsapp', 'tel']);
+      // ADICIONADO: Captura para Telefone 2
+      const idxPhone2 = getIdx(['telefone 2', 'telefone2', 'celular 2', 'tel 2', 'phone 2']);
+      const idxValue = getIdx(['valor', 'budget', 'venda', 'orcamento']);
+      const idxCity = getIdx(['cidade', 'city']);
+      const idxState = getIdx(['uf', 'estado', 'state']);
+      const idxInsta = getIdx(['instagram', 'insta']);
+      const idxLinkedin = getIdx(['linkedin']);
+      const idxOwner = getIdx(['responsavel', 'dono', 'owner', 'usuário']);
+      const idxSource = getIdx(['origem', 'source', 'fonte']);
+      const idxNotes = getIdx(['notas', 'obs', 'descrição', 'histórico', 'notes']);
 
       if (idxName === -1) {
-          toast({ title: "Erro de Formato", description: `Não encontrei a coluna 'Nome' ou 'Cliente'. Separador detectado: '${separator}'`, variant: "destructive" });
+          toast({ title: "Erro de Formato", description: `Coluna 'Nome' não encontrada. Colunas lidas: ${headers.join(', ')}`, variant: "destructive" });
           return;
       }
 
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        const cols = parseCSVLine(lines[i]).map(c => c.replace(/^"|"$/g, ''));
+      for (let i = startRowIndex; i < rows.length; i++) {
+        const cols = rows[i];
+        if (cols.length < 2) continue;
 
-        const name = cols[idxName];
-        if (!name || name === 'nan' || name.trim() === '') continue;
+        const getVal = (index: number) => index > -1 && cols[index] ? cols[index].replace(/^"|"$/g, '') : '';
 
-        let notes = '';
-        if (kommoNoteIndices.length > 1) {
-             kommoNoteIndices.forEach(idx => { if (cols[idx] && cols[idx] !== 'nan') notes += `\n- ${cols[idx]}`; });
-        } else if (idxNotes > -1) {
-             notes = cols[idxNotes];
-        }
+        const name = getVal(idxName);
+        if (!name || name.toLowerCase() === 'nan' || name === '') continue;
+
+        const email = getVal(idxEmail);
+        const exists = leads.some(l => (email && l.email === email && email !== '') || (l.title === name));
+        if (exists) continue; 
 
         newLeads.push({
             name: name,
-            company: idxCompany > -1 ? cols[idxCompany] : '',
-            email: idxEmail > -1 ? cols[idxEmail] : '',
-            phone: idxPhone > -1 ? cols[idxPhone] : '',
-            budget: idxValue > -1 ? cols[idxValue] : '0',
-            source: idxSource > -1 ? cols[idxSource] : 'import_planilha',
-            notes: notes ? notes.trim() : '',
+            company: getVal(idxCompany),
+            email: email,
+            phone: getVal(idxPhone),
+            phone_secondary: getVal(idxPhone2), // Mapeia o telefone 2
+            budget: getVal(idxValue) || '0',
+            city: getVal(idxCity),
+            state: getVal(idxState),
+            instagram: getVal(idxInsta),
+            linkedin: getVal(idxLinkedin),
+            owner_name: getVal(idxOwner),
             status: firstStageId,
             pipeline_id: currentPipelineId,
+            source: getVal(idxSource) || 'import_planilha',
+            notes: getVal(idxNotes),
             temperature: 'morno',
-            created_at: new Date().toISOString() 
+            created_at: new Date().toISOString()
         });
       }
 
       if (newLeads.length > 0) {
         const { error } = await supabase.from('leads').insert(newLeads);
-        if (error) { console.error(error); toast({ title: "Erro na importação", description: "Verifique o formato.", variant: "destructive" }); } 
-        else { toast({ title: "Sucesso!", description: `${newLeads.length} leads importados.` }); fetchLeads(currentPipelineId); }
+        if (error) { 
+            console.error(error);
+            toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
+        } else { 
+            toast({ title: "Sucesso!", description: `${newLeads.length} leads importados.`, className: "bg-green-600 text-white" });
+            fetchLeads(currentPipelineId); 
+        }
+      } else {
+          toast({ 
+            title: "Nenhum dado novo", 
+            description: "Leads vazios ou duplicados.", 
+            className: "bg-yellow-500 text-white" 
+          });
       }
     };
     reader.readAsText(file);
@@ -334,14 +401,20 @@ export default function CRMPage() {
   };
 
   const handleExportLeads = () => {
-    if (!leads || leads.length === 0) { toast({ title: "Nada para exportar", description: "Não há leads no funil.", variant: "destructive" }); return; }
-    const headers = ["Nome", "Empresa", "Email", "Telefone", "Valor", "Status", "Fonte", "Notas"];
+    if (!leads || leads.length === 0) { toast({ title: "Nada para exportar", description: "Não há leads no funil.", variant: "destructive" });
+    return; }
+    const headers = ["Nome", "Empresa", "Email", "Telefone", "Tel. Secundario", "Cidade", "UF", "Valor", "Status", "Fonte", "Instagram", "Responsavel", "Notas"];
     const csvRows = [
       headers.join(','),
       ...leads.map(lead => {
         const row = [
-          `"${lead.title || ''}"`, `"${lead.company || ''}"`, `"${lead.email || ''}"`, `"${lead.phone || ''}"`, `"${lead.budget || 0}"`,
-          `"${stages.find(s => s.id === lead.status)?.name || lead.status}"`, `"${lead.source || ''}"`, `"${(lead.notes || '').replace(/"/g, '""')}"`
+          `"${lead.title || ''}"`, `"${lead.company || ''}"`, `"${lead.email || ''}"`, 
+          `"${lead.phone || ''}"`, `"${lead.phone_secondary || ''}"`,
+          `"${lead.city || ''}"`, `"${lead.state || ''}"`,
+          `"${lead.budget || 0}"`,
+          `"${stages.find(s => s.id === lead.status)?.name || lead.status}"`, 
+          `"${lead.source || ''}"`, `"${lead.instagram || ''}"`, `"${lead.owner_name || ''}"`,
+          `"${(lead.notes || '').replace(/"/g, '""')}"`
         ];
         return row.join(',');
       })
@@ -355,15 +428,17 @@ export default function CRMPage() {
     document.body.removeChild(link);
   };
 
-  // --- ACTIONS ORIGINAIS (MANTIDAS) ---
+  // --- ACTIONS ---
   const handleAddNote = async () => {
     if (!selectedLead || !newNote.trim()) return;
     const { error } = await supabase.from('lead_activities').insert({ lead_id: selectedLead.id, type: 'note', content: newNote });
-    if (!error) { setNewNote(''); fetchLeadDetails(selectedLead.id); toast({ title: "Nota adicionada!" }); }
+    if (!error) { setNewNote(''); fetchLeadDetails(selectedLead.id);
+    toast({ title: "Nota adicionada!" }); }
   };
 
   const handleAddTask = async () => {
-    if (!selectedLead || !newTaskTitle.trim() || !newTaskDate) { toast({ title: "Erro", description: "Preencha o título.", variant: "destructive" }); return; }
+    if (!selectedLead || !newTaskTitle.trim() || !newTaskDate) { toast({ title: "Erro", description: "Preencha o título.", variant: "destructive" });
+    return; }
     const { error } = await supabase.from('lead_tasks').insert({ lead_id: selectedLead.id, title: newTaskTitle, due_date: new Date(newTaskDate).toISOString(), is_completed: false });
     if (!error) {
       setNewTaskTitle(''); setNewTaskDate(''); fetchLeadDetails(selectedLead.id);
@@ -388,7 +463,6 @@ export default function CRMPage() {
         pipeline_id: currentPipelineId, temperature: data.temperature || 'morno',
         instagram: data.instagram, linkedin: data.linkedin, city: data.city, state: data.state, owner_name: data.owner_name
       };
-
       if (editingLead) {
         await supabase.from('leads').update(payload).eq('id', editingLead.id);
         toast({ title: "Sucesso", description: "Lead atualizado." });
@@ -397,7 +471,8 @@ export default function CRMPage() {
         toast({ title: "Sucesso", description: "Lead criado." });
       }
       fetchLeads(currentPipelineId); setIsModalOpen(false); setEditingLead(null); reset();
-    } catch { toast({ title: "Erro", variant: "destructive" }); }
+    } catch { toast({ title: "Erro", variant: "destructive" });
+    }
   };
 
   const openEditModal = (lead: Lead) => {
@@ -433,7 +508,8 @@ export default function CRMPage() {
       notes: `[Origem CRM] ${lead.notes || ''}`, contractStartDate: new Date().toISOString().split('T')[0],
       status: 'active', value: contractValue, contract_url: contractUrl
     }).select().single();
-    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return;
+    }
 
     if (newClient) {
         const { data: leadActs } = await supabase.from('lead_activities').select('*').eq('lead_id', lead.id);
@@ -484,7 +560,8 @@ export default function CRMPage() {
 
   const handleCancelWin = () => { setIsWonModalOpen(false); setPendingLeadToConvert(null); setContractFile(null); };
   
-  const openTransferModal = (lead: Lead) => { setSelectedLead(lead); setTransferTargetPipeline(''); setTargetStages([]); setIsTransferModalOpen(true); };
+  const openTransferModal = (lead: Lead) => { setSelectedLead(lead); setTransferTargetPipeline(''); setTargetStages([]);
+    setIsTransferModalOpen(true); };
   
   useEffect(() => {
       if (transferTargetPipeline) {
@@ -509,7 +586,8 @@ export default function CRMPage() {
       if (!name || name.trim() === "") return;
       try {
         const { data } = await supabase.from('pipelines').insert({ name }).select().single();
-        if (data) { await createDefaultStages(data.id); setPipelines([...pipelines, data]); setCurrentPipelineId(data.id); alert("Pipeline criado com sucesso!"); }
+        if (data) { await createDefaultStages(data.id); setPipelines([...pipelines, data]); setCurrentPipelineId(data.id); alert("Pipeline criado com sucesso!");
+        }
       } catch(err: any) { alert(`Erro: ${err.message}`); }
   };
 
@@ -532,7 +610,8 @@ export default function CRMPage() {
       if (!newStageName) return;
       const position = stages.length;
       const { data } = await supabase.from('pipeline_stages').insert({ pipeline_id: currentPipelineId, name: newStageName, position, color: 'bg-slate-200' }).select().single();
-      if (data) { setStages([...stages, data]); setNewStageName(''); }
+      if (data) { setStages([...stages, data]);
+      setNewStageName(''); }
   };
 
   const handleDeleteStage = async (stageId: string) => {
@@ -635,7 +714,8 @@ export default function CRMPage() {
               <p className="text-slate-600 dark:text-slate-400 mt-1">Gerencie seus leads de tráfego pago e conversões</p>
               <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-2">
                 {pipelines.map(p => (
-                    <button key={p.id} onClick={() => setCurrentPipelineId(p.id)} className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors ${currentPipelineId === p.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    <button key={p.id} onClick={() => setCurrentPipelineId(p.id)} className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors 
+                        ${currentPipelineId === p.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
                         {p.name}
                     </button>
                 ))}
@@ -661,7 +741,7 @@ export default function CRMPage() {
                     <div className="relative">
                         <input type="file" accept=".csv" onChange={handleImportLeads} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                         <button className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium h-full">
-                            <Upload className="h-4 w-4"/> Importar
+                            <Upload className="h-4 w-4"/> Importar Planilha CSV
                         </button>
                     </div>
                 )}
@@ -708,7 +788,6 @@ export default function CRMPage() {
                                     </div>
                                     <KanbanColumn id={stage.id} title="" tasks={leadsInStage} color={stage.color || 'bg-slate-100'}>
                                         {leadsInStage.map(lead => {
-                                            const tempBadge = getTemperatureBadge(lead.temperature);
                                             return (
                                                 <SortableTaskCard
                                                     key={lead.id}
@@ -724,7 +803,7 @@ export default function CRMPage() {
                                     </KanbanColumn>
                                 </div>
                             );
-                      })}
+                        })}
                     </div>
                  </DndContext>
             </div>
@@ -806,7 +885,8 @@ export default function CRMPage() {
               <div className={`bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border-2 border-dashed transition-colors mb-6 text-center ${!contractFile ? 'border-slate-300' : 'border-green-500 bg-green-50'}`}>
                   <input type="file" id="contract-upload" className="hidden" onChange={(e) => setContractFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.jpg,.png,.jpeg"/>
                   <label htmlFor="contract-upload" className="cursor-pointer flex flex-col items-center gap-2">
-                      {contractFile ? <><FileText className="h-8 w-8 text-green-500" /><span className="text-sm font-medium truncate max-w-[200px]">{contractFile.name}</span></> : <><Upload className="h-8 w-8 text-slate-400" /><span className="text-sm font-medium text-slate-600">Clique para selecionar</span></>}</label>
+                      {contractFile ?
+                        <><FileText className="h-8 w-8 text-green-500" /><span className="text-sm font-medium truncate max-w-[200px]">{contractFile.name}</span></> : <><Upload className="h-8 w-8 text-slate-400" /><span className="text-sm font-medium text-slate-600">Clique para selecionar</span></>}</label>
               </div>
               <div className="flex gap-3">
                   <Button variant="outline" onClick={handleCancelWin} className="flex-1">Cancelar</Button>
@@ -857,7 +937,6 @@ export default function CRMPage() {
               </div>
           </div>
       )}
-
     </div>
   );
 }
