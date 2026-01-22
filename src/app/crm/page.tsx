@@ -100,14 +100,12 @@ const formatCurrencyDisplay = (value: number) => {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-// --- PARSER CSV AVANÇADO E INTELIGENTE ---
+// --- PARSER CSV AVANÇADO ---
 const parseCSVRobust = (text: string): string[][] => {
-  // Normaliza quebras de linha
   const cleanText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  
-  // Detecta separador
   const firstLineEnd = cleanText.indexOf('\n');
   const firstLine = cleanText.substring(0, firstLineEnd > -1 ? firstLineEnd : cleanText.length);
+  
   const commaCount = (firstLine.match(/,/g) || []).length;
   const semiCount = (firstLine.match(/;/g) || []).length;
   const separator = semiCount >= commaCount ? ';' : ',';
@@ -119,12 +117,10 @@ const parseCSVRobust = (text: string): string[][] => {
 
   for (let i = 0; i < cleanText.length; i++) {
     const char = cleanText[i];
-    const nextChar = cleanText[i + 1];
-
+    
     if (char === '"') {
-      if (insideQuotes && nextChar === '"') {
-        currentCell += '"'; 
-        i++;
+      if (insideQuotes && cleanText[i+1] === '"') {
+        currentCell += '"'; i++;
       } else {
         insideQuotes = !insideQuotes;
       }
@@ -140,12 +136,10 @@ const parseCSVRobust = (text: string): string[][] => {
       currentCell += char;
     }
   }
-  
   if (currentCell || currentRow.length > 0) {
     currentRow.push(currentCell.trim());
     rows.push(currentRow);
   }
-
   return rows;
 };
 
@@ -182,8 +176,7 @@ export default function CRMPage() {
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
-  // NOVO ESTADO PARA O FILTRO DE STATUS
-  const [statusFilter, setStatusFilter] = useState('active'); // 'active' (default), 'won', 'lost', 'all'
+  const [statusFilter, setStatusFilter] = useState('active'); 
 
   const [transferTargetPipeline, setTransferTargetPipeline] = useState('');
   const [transferTargetStage, setTransferTargetStage] = useState('');
@@ -191,7 +184,7 @@ export default function CRMPage() {
   const [editPipelineName, setEditPipelineName] = useState('');
   const [newStageName, setNewStageName] = useState('');
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<LeadFormData>({
+  const { register, handleSubmit, reset } = useForm<LeadFormData>({
     resolver: zodResolver(leadSchema),
   });
 
@@ -281,16 +274,13 @@ export default function CRMPage() {
   const fetchLeadDetails = async (leadId: string) => {
     const { data: acts } = await supabase.from('lead_activities').select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
     if (acts) setActivities(acts);
-
     const { data: tsks } = await supabase.from('lead_tasks').select('*').eq('lead_id', leadId).order('due_date', { ascending: true });
     if (tsks) setTasks(tsks);
   };
 
-  // --- IMPORTADOR ---
   const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
     if (!currentPipelineId || stages.length === 0) { 
       toast({ title: "Erro", description: "Carregue o pipeline primeiro.", variant: "destructive" });
       return; 
@@ -301,17 +291,14 @@ export default function CRMPage() {
       let text = event.target?.result as string;
       if (!text) return;
       if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-
       const rows = parseCSVRobust(text);
-
       if (rows.length < 2) { 
-        toast({ title: "Arquivo Inválido", description: "Arquivo vazio ou incorreto.", variant: "destructive" }); 
+        toast({ title: "Arquivo Inválido", description: "Arquivo vazio.", variant: "destructive" }); 
         return;
       }
-
+      
       let headers = rows[0].map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
       let startRowIndex = 1;
-
       if (headers.length > 0 && headers[0] === 'a' && headers[1] === 'b') {
          headers = rows[1].map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
          startRowIndex = 2; 
@@ -319,14 +306,13 @@ export default function CRMPage() {
       
       const newLeads: any[] = [];
       const firstStageId = stages[0].id;
-
       const getIdx = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h === k || h.includes(k)));
 
       const idxName = getIdx(['nome', 'name', 'cliente', 'lead', 'título', 'full name', 'contact']);
       const idxCompany = getIdx(['empresa', 'company', 'negócio']);
       const idxEmail = getIdx(['email', 'e-mail']);
       const idxPhone = getIdx(['telefone', 'phone', 'celular', 'whatsapp', 'tel']);
-      const idxPhone2 = getIdx(['telefone 2', 'telefone2', 'celular 2', 'tel 2', 'phone 2']);
+      const idxPhone2 = getIdx(['telefone 2', 'telefone2', 'celular 2', 'tel 2']);
       const idxValue = getIdx(['valor', 'budget', 'venda', 'orcamento']);
       const idxCity = getIdx(['cidade', 'city']);
       const idxState = getIdx(['uf', 'estado', 'state']);
@@ -337,16 +323,14 @@ export default function CRMPage() {
       const idxNotes = getIdx(['notas', 'obs', 'descrição', 'histórico', 'notes']);
 
       if (idxName === -1) {
-          toast({ title: "Erro de Formato", description: `Coluna 'Nome' não encontrada. Colunas lidas: ${headers.join(', ')}`, variant: "destructive" });
+          toast({ title: "Erro de Formato", description: `Coluna 'Nome' não encontrada.`, variant: "destructive" });
           return;
       }
 
       for (let i = startRowIndex; i < rows.length; i++) {
         const cols = rows[i];
         if (cols.length < 2) continue;
-
         const getVal = (index: number) => index > -1 && cols[index] ? cols[index].replace(/^"|"$/g, '') : '';
-
         const name = getVal(idxName);
         if (!name || name.toLowerCase() === 'nan' || name === '') continue;
 
@@ -385,11 +369,7 @@ export default function CRMPage() {
             fetchLeads(currentPipelineId); 
         }
       } else {
-          toast({ 
-            title: "Nenhum dado novo", 
-            description: "Leads vazios ou duplicados.", 
-            className: "bg-yellow-500 text-white" 
-          });
+          toast({ title: "Nenhum dado novo", description: "Leads vazios ou duplicados.", className: "bg-yellow-500 text-white" });
       }
     };
     reader.readAsText(file);
@@ -397,8 +377,7 @@ export default function CRMPage() {
   };
 
   const handleExportLeads = () => {
-    if (!leads || leads.length === 0) { toast({ title: "Nada para exportar", description: "Não há leads no funil.", variant: "destructive" });
-    return; }
+    if (!leads || leads.length === 0) { toast({ title: "Nada para exportar", description: "Não há leads no funil.", variant: "destructive" }); return; }
     const headers = ["Nome", "Empresa", "Email", "Telefone", "Tel. Secundario", "Cidade", "UF", "Valor", "Status", "Fonte", "Instagram", "Responsavel", "Notas"];
     const csvRows = [
       headers.join(','),
@@ -424,17 +403,14 @@ export default function CRMPage() {
     document.body.removeChild(link);
   };
 
-  // --- ACTIONS ---
   const handleAddNote = async () => {
     if (!selectedLead || !newNote.trim()) return;
     const { error } = await supabase.from('lead_activities').insert({ lead_id: selectedLead.id, type: 'note', content: newNote });
-    if (!error) { setNewNote(''); fetchLeadDetails(selectedLead.id);
-    toast({ title: "Nota adicionada!" }); }
+    if (!error) { setNewNote(''); fetchLeadDetails(selectedLead.id); toast({ title: "Nota adicionada!" }); }
   };
 
   const handleAddTask = async () => {
-    if (!selectedLead || !newTaskTitle.trim() || !newTaskDate) { toast({ title: "Erro", description: "Preencha o título.", variant: "destructive" });
-    return; }
+    if (!selectedLead || !newTaskTitle.trim() || !newTaskDate) { toast({ title: "Erro", description: "Preencha o título.", variant: "destructive" }); return; }
     const { error } = await supabase.from('lead_tasks').insert({ lead_id: selectedLead.id, title: newTaskTitle, due_date: new Date(newTaskDate).toISOString(), is_completed: false });
     if (!error) {
       setNewTaskTitle(''); setNewTaskDate(''); fetchLeadDetails(selectedLead.id);
@@ -448,31 +424,21 @@ export default function CRMPage() {
       if (selectedLead) fetchLeadDetails(selectedLead.id);
   };
 
-  // FUNÇÃO PARA MUDAR MANUALMENTE O ESTÁGIO (NOVO RECURSO)
   const handleManualStageChange = async (leadId: string, newStageId: string) => {
-      // Atualização Otimista
       setLeads(currentLeads => currentLeads.map(l => l.id === leadId ? { ...l, status: newStageId } : l));
-      
-      // Atualiza lead selecionado se estiver aberto no modal
       if (selectedLead && selectedLead.id === leadId) {
           setSelectedLead({ ...selectedLead, status: newStageId });
       }
-
       const { error } = await supabase.from('leads').update({ status: newStageId }).eq('id', leadId);
-      
       if (error) {
           toast({ title: "Erro ao atualizar", description: error.message, variant: "destructive" });
-          fetchLeads(currentPipelineId); // Reverte em caso de erro
+          fetchLeads(currentPipelineId); 
       } else {
-        // Verifica se foi movido para ganho para disparar o modal de venda
         const targetStage = stages.find(s => s.id === newStageId);
         const isWonStage = targetStage?.name.toLowerCase().includes('ganho') || targetStage?.name.toLowerCase().includes('fechado');
         if (isWonStage) {
              const lead = leads.find(l => l.id === leadId);
-             if (lead) {
-                 setPendingLeadToConvert(lead);
-                 setIsWonModalOpen(true);
-             }
+             if (lead) { setPendingLeadToConvert(lead); setIsWonModalOpen(true); }
         }
       }
   };
@@ -496,8 +462,7 @@ export default function CRMPage() {
         toast({ title: "Sucesso", description: "Lead criado." });
       }
       fetchLeads(currentPipelineId); setIsModalOpen(false); setEditingLead(null); reset();
-    } catch { toast({ title: "Erro", variant: "destructive" });
-    }
+    } catch { toast({ title: "Erro", variant: "destructive" }); }
   };
 
   const openEditModal = (lead: Lead) => {
@@ -522,9 +487,7 @@ export default function CRMPage() {
         setLeads(leads.filter(l => l.id !== id));
         toast({ title: "Excluído", description: "Lead removido do pipeline." });
         if (isDetailModalOpen) setIsDetailModalOpen(false);
-      } catch (error) {
-        toast({ title: "Erro", description: "Erro ao excluir lead.", variant: "destructive" });
-      }
+      } catch (error) { toast({ title: "Erro", description: "Erro ao excluir lead.", variant: "destructive" }); }
   }
 
   const convertToClient = async (lead: Lead, contractUrl: string | null = null) => {
@@ -534,8 +497,7 @@ export default function CRMPage() {
       notes: `[Origem CRM] ${lead.notes || ''}`, contractStartDate: new Date().toISOString().split('T')[0],
       status: 'active', value: contractValue, contract_url: contractUrl
     }).select().single();
-    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return;
-    }
+    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
 
     if (newClient) {
         const { data: leadActs } = await supabase.from('lead_activities').select('*').eq('lead_id', lead.id);
@@ -556,7 +518,6 @@ export default function CRMPage() {
         toast({ title: "Documento Obrigatório", description: "Para fechar a venda, é OBRIGATÓRIO anexar o contrato assinado ou comprovante.", variant: "destructive" });
         return;
     }
-
     setIsUploading(true);
     let publicUrl: string | null = null;
     try {
@@ -579,15 +540,12 @@ export default function CRMPage() {
     } catch (error: any) {
         console.error("Erro no processo de ganho:", error);
         toast({ title: "Erro ao processar", description: error.message, variant: "destructive" });
-    } finally {
-        setIsUploading(false);
-    }
+    } finally { setIsUploading(false); }
   };
 
   const handleCancelWin = () => { setIsWonModalOpen(false); setPendingLeadToConvert(null); setContractFile(null); };
   
-  const openTransferModal = (lead: Lead) => { setSelectedLead(lead); setTransferTargetPipeline(''); setTargetStages([]);
-    setIsTransferModalOpen(true); };
+  const openTransferModal = (lead: Lead) => { setSelectedLead(lead); setTransferTargetPipeline(''); setTargetStages([]); setIsTransferModalOpen(true); };
   
   useEffect(() => {
       if (transferTargetPipeline) {
@@ -612,8 +570,7 @@ export default function CRMPage() {
       if (!name || name.trim() === "") return;
       try {
         const { data } = await supabase.from('pipelines').insert({ name }).select().single();
-        if (data) { await createDefaultStages(data.id); setPipelines([...pipelines, data]); setCurrentPipelineId(data.id); alert("Pipeline criado com sucesso!");
-        }
+        if (data) { await createDefaultStages(data.id); setPipelines([...pipelines, data]); setCurrentPipelineId(data.id); alert("Pipeline criado com sucesso!"); }
       } catch(err: any) { alert(`Erro: ${err.message}`); }
   };
 
@@ -636,8 +593,7 @@ export default function CRMPage() {
       if (!newStageName) return;
       const position = stages.length;
       const { data } = await supabase.from('pipeline_stages').insert({ pipeline_id: currentPipelineId, name: newStageName, position, color: 'bg-slate-200' }).select().single();
-      if (data) { setStages([...stages, data]);
-      setNewStageName(''); }
+      if (data) { setStages([...stages, data]); setNewStageName(''); }
   };
 
   const handleDeleteStage = async (stageId: string) => {
@@ -675,36 +631,43 @@ export default function CRMPage() {
     await supabase.from('leads').update({ status: newStatusId }).eq('id', leadId);
   };
 
-  // --- FILTRAGEM AVANÇADA (Status Perdido Oculto por Padrão) ---
+  // --- FILTRAGEM AVANÇADA (LEADS) ---
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
-        // Filtro de Texto
         const matchSearch = lead.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             lead.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             lead.phone.includes(searchTerm) ||
                             lead.company.toLowerCase().includes(searchTerm.toLowerCase());
-        // Filtro de Origem
         const matchSource = sourceFilter === 'all' || lead.source === sourceFilter;
         
-        // Filtro de Status (Ocultar Perdidos)
         const stage = stages.find(s => s.id === lead.status);
         const stageName = stage?.name.toLowerCase() || '';
         const isLost = stageName.includes('perdido');
         const isWon = stageName.includes('ganho') || stageName.includes('fechado');
 
         let matchStatus = true;
-        if (statusFilter === 'active') {
-            matchStatus = !isLost; // Padrão: Oculta perdidos
-        } else if (statusFilter === 'lost') {
-            matchStatus = isLost;
-        } else if (statusFilter === 'won') {
-            matchStatus = isWon;
-        }
-        // statusFilter === 'all' retorna tudo (inclusive perdidos)
+        if (statusFilter === 'active') matchStatus = !isLost; 
+        else if (statusFilter === 'lost') matchStatus = isLost;
+        else if (statusFilter === 'won') matchStatus = isWon;
 
         return matchSearch && matchSource && matchStatus; 
     });
   }, [leads, searchTerm, sourceFilter, statusFilter, stages]);
+
+  // --- FILTRAGEM DE COLUNAS (NOVA LÓGICA) ---
+  // Isso oculta visualmente a coluna "Perdido" quando não estamos filtrando por perdidos.
+  const filteredStages = useMemo(() => {
+      return stages.filter(stage => {
+          const name = stage.name.toLowerCase();
+          const isLost = name.includes('perdido');
+          const isWon = name.includes('ganho') || name.includes('fechado');
+
+          if (statusFilter === 'active') return !isLost; // Oculta Perdido no padrão
+          if (statusFilter === 'won') return isWon;      // Mostra só Ganho
+          if (statusFilter === 'lost') return isLost;    // Mostra só Perdido
+          return true; // All mostra tudo
+      });
+  }, [stages, statusFilter]);
 
   const leadsByStage = useMemo(() => {
       const grouped: Record<string, Lead[]> = {};
@@ -729,6 +692,13 @@ export default function CRMPage() {
       return totals;
   }, [leadsByStage, stages]);
 
+  // Função para abrir o modal de detalhes (que estava faltando)
+  const openDetailModal = (lead: Lead) => {
+      setSelectedLead(lead);
+      fetchLeadDetails(lead.id);
+      setIsDetailModalOpen(true);
+  }
+
   const getTemperatureBadge = (temp: string) => {
       switch(temp) {
           case 'quente': return { color: 'bg-red-100 text-red-600', icon: Flame };
@@ -747,17 +717,13 @@ export default function CRMPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
-          
           <div className="mb-6 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Pipeline de Vendas</h1>
               <p className="text-slate-600 dark:text-slate-400 mt-1">Gerencie seus leads de tráfego pago e conversões</p>
               <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-2">
                 {pipelines.map(p => (
-                    <button key={p.id} onClick={() => setCurrentPipelineId(p.id)} className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors 
-                        ${currentPipelineId === p.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-                        {p.name}
-                    </button>
+                    <button key={p.id} onClick={() => setCurrentPipelineId(p.id)} className={`px-3 py-1 rounded-full text-sm whitespace-nowrap transition-colors ${currentPipelineId === p.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>{p.name}</button>
                 ))}
                 {can('crm', 'create') && <button onClick={createPipeline} className="p-1 rounded-full bg-slate-200 dark:bg-slate-800"><Plus className="h-4 w-4" /></button>}
                 {can('crm', 'edit') && <button onClick={() => setIsPipelineSettingsOpen(true)} className="p-1 rounded-full bg-slate-200 dark:bg-slate-800 ml-2"><Settings className="h-4 w-4" /></button>}
@@ -770,27 +736,14 @@ export default function CRMPage() {
                     <code className="text-xs bg-slate-100 dark:bg-slate-950 px-2 py-1 rounded max-w-[100px] truncate">{webhookUrl || 'Carregando...'}</code>
                     <button onClick={copyWebhook}><Copy className="h-4 w-4"/></button>
                 </div>
-
-                {can('crm', 'view') && (
-                    <button onClick={handleExportLeads} className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium">
-                        <Download className="h-4 w-4"/> Exportar
-                    </button>
-                )}
-
+                {can('crm', 'view') && <button onClick={handleExportLeads} className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium"><Download className="h-4 w-4"/> Exportar</button>}
                 {can('crm', 'create') && (
                     <div className="relative">
                         <input type="file" accept=".csv" onChange={handleImportLeads} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                        <button className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium h-full">
-                            <Upload className="h-4 w-4"/> Importar Planilha CSV
-                        </button>
+                        <button className="bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-2 rounded-lg hover:bg-slate-50 flex items-center gap-2 text-sm font-medium h-full"><Upload className="h-4 w-4"/> Importar Planilha CSV</button>
                     </div>
                 )}
-
-                {can('crm', 'create') && (
-                    <Button onClick={() => { setEditingLead(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 dark:bg-white dark:text-slate-900">
-                        <UserPlus className="h-4 w-4 mr-2" /> Novo Lead
-                    </Button>
-                )}
+                {can('crm', 'create') && <Button onClick={() => { setEditingLead(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 dark:bg-white dark:text-slate-900"><UserPlus className="h-4 w-4 mr-2" /> Novo Lead</Button>}
             </div>
           </div>
 
@@ -799,15 +752,12 @@ export default function CRMPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input placeholder="Buscar por nome, email, telefone..." className="w-full pl-10 pr-4 py-2 border rounded-lg bg-transparent dark:text-white dark:border-slate-700" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
             </div>
-            
-            {/* FILTRO DE STATUS */}
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-2 border rounded-lg bg-transparent dark:text-white dark:bg-slate-900 dark:border-slate-700">
                 <option value="active">Em Aberto (Ocultar Perdidos)</option>
                 <option value="won">Ganhos</option>
                 <option value="lost">Perdidos</option>
                 <option value="all">Todos</option>
             </select>
-
             <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="px-3 py-2 border rounded-lg bg-transparent dark:text-white dark:bg-slate-900 dark:border-slate-700">
                 <option value="all">Todas as Fontes</option>
                 {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -820,40 +770,22 @@ export default function CRMPage() {
           ) : (
             <div className="h-[calc(100vh-280px)] overflow-x-auto pb-4">
                  <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
-                    <div className="flex gap-4 h-full" style={{ minWidth: `${stages.length * 320}px` }}>
-                      {stages.map(stage => {
+                    <div className="flex gap-4 h-full" style={{ minWidth: `${filteredStages.length * 320}px` }}>
+                      {filteredStages.map(stage => {
                             const leadsInStage = leadsByStage[stage.id] || [];
-                            
-                            // Se for coluna de "Perdido" e o filtro for "Active", podemos ocultar a coluna inteira se quiser,
-                            // mas o pedido foi ocultar os leads. A lógica `leadsByStage` já usa `filteredLeads` que filtra os leads.
-                            // Então a coluna ficará vazia se "active" for selecionado.
-                            
                             return (
                                 <div key={stage.id} className="flex flex-col h-full w-80">
                                     <div className="mb-3">
                                         <div className="flex items-center justify-between">
-                                            <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                                <span className={`w-3 h-3 rounded-full ${stage.color || 'bg-slate-400'}`}></span>
-                                                {stage.name}
-                                            </span>
+                                            <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2"><span className={`w-3 h-3 rounded-full ${stage.color || 'bg-slate-400'}`}></span>{stage.name}</span>
                                             <span className="text-xs bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full">{leadsInStage.length}</span>
                                         </div>
                                         <div className="text-sm font-bold pl-5 mt-1 text-slate-500">{formatCurrencyDisplay(totalsByStatus[stage.id] || 0)}</div>
                                     </div>
                                     <KanbanColumn id={stage.id} title="" tasks={leadsInStage} color={stage.color || 'bg-slate-100'}>
-                                        {leadsInStage.map(lead => {
-                                            return (
-                                                <SortableTaskCard
-                                                    key={lead.id}
-                                                    task={lead as any}
-                                                    clientName={lead.company || lead.email}
-                                                    getPriorityColor={() => 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}
-                                                    openEditModal={() => openEditModal(lead)}
-                                                    deleteTask={() => deleteLead(lead.id)}
-                                                    onCardClick={() => openDetailModal(lead)}
-                                                />
-                                            )
-                                        })}
+                                        {leadsInStage.map(lead => (
+                                                <SortableTaskCard key={lead.id} task={lead as any} clientName={lead.company || lead.email} getPriorityColor={() => 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'} openEditModal={() => openEditModal(lead)} deleteTask={() => deleteLead(lead.id)} onCardClick={() => openDetailModal(lead)} />
+                                        ))}
                                     </KanbanColumn>
                                 </div>
                             );
@@ -891,21 +823,12 @@ export default function CRMPage() {
                   <div className="flex justify-between items-start mb-6">
                       <div className="flex-1">
                           <h2 className="text-2xl font-bold dark:text-white">{selectedLead.title}</h2>
-                          
-                          {/* SELETOR DE MUDANÇA DE ESTÁGIO (NOVO) */}
                           <div className="mt-2 mb-2">
                              <label className="text-xs text-slate-500 font-bold uppercase">Fase do Funil</label>
-                             <select 
-                                className="w-full mt-1 p-2 border rounded-md dark:bg-slate-900 dark:border-slate-700 text-sm"
-                                value={selectedLead.status}
-                                onChange={(e) => handleManualStageChange(selectedLead.id, e.target.value)}
-                             >
-                                {stages.map(s => (
-                                    <option key={s.id} value={s.id}>{s.name}</option>
-                                ))}
+                             <select className="w-full mt-1 p-2 border rounded-md dark:bg-slate-900 dark:border-slate-700 text-sm" value={selectedLead.status} onChange={(e) => handleManualStageChange(selectedLead.id, e.target.value)}>
+                                {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                              </select>
                           </div>
-
                           <div className="flex flex-wrap gap-2 mt-2">
                                {selectedLead.company && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><FileText className="h-3 w-3"/> {selectedLead.company}</span>}
                                {selectedLead.city && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><MapPin className="h-3 w-3"/> {selectedLead.city}/{selectedLead.state}</span>}
@@ -953,9 +876,7 @@ export default function CRMPage() {
               </div>
               <div className={`bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border-2 border-dashed transition-colors mb-6 text-center ${!contractFile ? 'border-slate-300' : 'border-green-500 bg-green-50'}`}>
                   <input type="file" id="contract-upload" className="hidden" onChange={(e) => setContractFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.jpg,.png,.jpeg"/>
-                  <label htmlFor="contract-upload" className="cursor-pointer flex flex-col items-center gap-2">
-                      {contractFile ?
-                        <><FileText className="h-8 w-8 text-green-500" /><span className="text-sm font-medium truncate max-w-[200px]">{contractFile.name}</span></> : <><Upload className="h-8 w-8 text-slate-400" /><span className="text-sm font-medium text-slate-600">Clique para selecionar</span></>}</label>
+                  <label htmlFor="contract-upload" className="cursor-pointer flex flex-col items-center gap-2">{contractFile ? <><FileText className="h-8 w-8 text-green-500" /><span className="text-sm font-medium truncate max-w-[200px]">{contractFile.name}</span></> : <><Upload className="h-8 w-8 text-slate-400" /><span className="text-sm font-medium text-slate-600">Clique para selecionar</span></>}</label>
               </div>
               <div className="flex gap-3">
                   <Button variant="outline" onClick={handleCancelWin} className="flex-1">Cancelar</Button>
@@ -965,7 +886,6 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* MODAL CONFIGURAÇÃO DO PIPELINE (FUNIL) */}
       {isPipelineSettingsOpen && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-900 rounded-xl max-w-lg w-full p-6 border dark:border-slate-800 max-h-[80vh] overflow-y-auto">
