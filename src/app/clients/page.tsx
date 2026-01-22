@@ -6,7 +6,9 @@ import { Header } from '@/components/custom/header';
 import { 
   Search, Plus, Mail, Phone, Building, FileText, Folder, Upload, Download, Trash2, Clock, DollarSign, X, Edit, AlertCircle, Loader2, FolderPlus, ChevronLeft, CornerUpLeft,
   CheckSquare, Calendar, User, Target, Bell, LayoutGrid, List, MessageSquare, Send, Filter, TrendingUp, TrendingDown, Activity, Users, AlertTriangle, Info, Zap, RefreshCw,
-  CheckCircle, Percent, Wallet, PieChart, Settings, ArrowUp, ArrowDown, HelpCircle, Save, CalendarDays
+  CheckCircle, Percent, Wallet, PieChart, Settings, ArrowUp, ArrowDown, HelpCircle, Save, CalendarDays,
+  // Ícones adicionados para as novas funções:
+  Palette, Repeat, ChevronUp, ChevronDown, CheckCircle2 
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -23,6 +25,13 @@ import { Input } from '@/components/ui/input';
 import { DndContext, DragEndEvent, pointerWithin } from '@dnd-kit/core';
 import { KanbanColumn } from '@/components/custom/kanban-column';
 import { SortableTaskCard } from '@/components/custom/sortable-task-card';
+import { format, addDays, addWeeks, addMonths, nextDay } from 'date-fns';
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ptBR } from 'date-fns/locale';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ==================================================================================
 // --- 1. VIEW CLIENTES ---
@@ -490,6 +499,7 @@ function ClientsView() {
 // --- 2. VIEW TAREFAS (COM COLUNAS DINÂMICAS E PRAZOS) ---
 // ==================================================================================
 
+// --- ATUALIZAÇÃO DO SCHEMA (Substitua o const taskSchema existente) ---
 const taskSchema = z.object({
   title: z.string().min(1, 'Título é obrigatório'),
   description: z.string().optional(),
@@ -499,8 +509,25 @@ const taskSchema = z.object({
   assignedTo: z.string().optional(),
   clientId: z.string().optional(),
   subProject: z.string().optional(),
+  // Novos campos de recorrência
+  isRecurring: z.boolean().optional(),
+  recurrenceInterval: z.enum(['daily', 'weekly', 'biweekly', 'monthly', 'custom']).optional(),
+  recurrenceDayOfWeek: z.string().optional(),
+  recurrenceCustomDays: z.string().optional(),
 });
 type TaskFormData = z.infer<typeof taskSchema>;
+
+// Cores para as Colunas
+const COLUMN_COLORS = [
+  { name: 'Cinza', value: 'bg-slate-400' },
+  { name: 'Azul', value: 'bg-blue-500' },
+  { name: 'Verde', value: 'bg-green-500' },
+  { name: 'Amarelo', value: 'bg-yellow-500' },
+  { name: 'Vermelho', value: 'bg-red-500' },
+  { name: 'Roxo', value: 'bg-purple-500' },
+  { name: 'Laranja', value: 'bg-orange-500' },
+  { name: 'Preto', value: 'bg-slate-900' },
+];
 
 const DEFAULT_COLUMNS = [
   { id: 'pendente', title: 'Pendente', color: 'bg-slate-400', description: 'Tarefas aguardando início.' },
@@ -509,9 +536,10 @@ const DEFAULT_COLUMNS = [
   { id: 'cancelada', title: 'Cancelada', color: 'bg-red-500', description: 'Tarefas que não serão mais realizadas.' },
 ];
 
+// --- FUNÇÃO TASKSVIEW ATUALIZADA ---
 function TasksView() {
   const { user } = useAuth();
-  const { can } = usePermission(); // Hook adicionado
+  const { can } = usePermission();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -543,6 +571,10 @@ function TasksView() {
   const { register, handleSubmit, reset, watch, setValue } = useForm<TaskFormData>({ resolver: zodResolver(taskSchema) });
   const selectedClientId = watch('clientId');
   
+  // Watchers para recorrência
+  const isRecurring = watch('isRecurring');
+  const recurrenceInterval = watch('recurrenceInterval');
+  
   useEffect(() => { fetchData(); fetchColumns(); }, []);
   
   const fetchColumns = async () => {
@@ -554,10 +586,16 @@ function TasksView() {
   };
 
   const saveColumnsToDb = async (newCols: any[]) => {
-      if (!can('tasks', 'edit')) return; // Trava extra
+      if (!can('tasks', 'edit')) return;
       setColumns(newCols);
       try { await supabase.from('app_settings').upsert({ key: 'kanban_columns', value: newCols, updated_by: user?.id }); } 
       catch (err) { toast({ title: "Erro ao salvar", variant: "destructive" }); }
+  };
+
+  // Função para atualizar cor da coluna
+  const updateColumnColor = (colId: string, newColor: string) => {
+      const newCols = columns.map(c => c.id === colId ? { ...c, color: newColor } : c);
+      saveColumnsToDb(newCols);
   };
 
   useEffect(() => {
@@ -602,8 +640,25 @@ function TasksView() {
   const tasksByStatus = filteredTasks.reduce((acc, t) => { acc[t.status] = acc[t.status] || []; acc[t.status].push(t); return acc; }, {} as any);
   const stats = { total: filteredTasks.length, overdue: tasks.filter(t => getTaskDeadlineStatus(t) === 'overdue').length };
 
+  // --- LÓGICA DE CÁLCULO DE DATA FUTURA ---
+  const calculateNextDate = (baseDate: string | Date, interval: string, dayOfWeek?: string, customDays?: string) => {
+      const start = baseDate ? new Date(baseDate) : new Date();
+      // Se a data base for passado, usa hoje
+      const effectiveStart = start < new Date() ? new Date() : start;
+      
+      switch(interval) {
+          case 'daily': return addDays(effectiveStart, 1);
+          case 'weekly': 
+              if(dayOfWeek) return nextDay(effectiveStart, Number(dayOfWeek) as any);
+              return addWeeks(effectiveStart, 1);
+          case 'biweekly': return addWeeks(effectiveStart, 2);
+          case 'monthly': return addMonths(effectiveStart, 1);
+          case 'custom': return addDays(effectiveStart, Number(customDays) || 1);
+          default: return addDays(effectiveStart, 1);
+      }
+  };
+
   const onSubmit = async (data: TaskFormData) => {
-    // Verificação de permissão
     if (editingTask && !can('tasks', 'edit')) { toast({ title: "Acesso Negado", description: "Sem permissão para editar.", variant: "destructive" }); return; }
     if (!editingTask && !can('tasks', 'create')) { toast({ title: "Acesso Negado", description: "Sem permissão para criar.", variant: "destructive" }); return; }
 
@@ -611,15 +666,21 @@ function TasksView() {
     const payload = {
         title: data.title, description: data.description, priority: data.priority, status: data.status,
         due_date: finalDate, client_id: data.clientId || null, assignee_id: data.assignedTo || null,
-        sub_project: data.subProject || null
+        sub_project: data.subProject || null,
+        // Novos campos
+        is_recurring: data.isRecurring || false,
+        recurrence_interval: data.isRecurring ? data.recurrenceInterval : null,
+        recurrence_day_of_week: data.isRecurring ? data.recurrenceDayOfWeek : null,
+        recurrence_custom_days: data.isRecurring ? data.recurrenceCustomDays : null
     };
+    
     if (editingTask) await supabase.from('tasks').update(payload).eq('id', editingTask.id);
     else await supabase.from('tasks').insert(payload);
+    
     setIsModalOpen(false); fetchData(); reset(); toast({ title: "Tarefa salva" });
   };
 
   const handleDeleteTask = async (taskId: string) => {
-      // TRAVA DE SEGURANÇA
       if (!can('tasks', 'delete')) {
           toast({ title: "Acesso Negado", description: "Você não tem permissão para excluir tarefas.", variant: "destructive" });
           return;
@@ -634,17 +695,53 @@ function TasksView() {
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    // Permite mover cards apenas se tiver permissão de editar (opcional, pode deixar livre para status)
-    // if (!can('tasks', 'edit')) return; 
-    
     const { active, over } = event;
     if (!over) return;
     const taskId = active.id as string;
     const newStatus = over.id as string;
     if (!columns.some(c => c.id === newStatus)) return;
     if (active.data.current?.sortable.containerId === newStatus) return;
+
+    const task = tasks.find(t => t.id === taskId);
+    
+    // Atualização otimista
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
     await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
+
+    // --- LÓGICA DE RECORRÊNCIA AO CONCLUIR ---
+    if (newStatus === 'concluida' && task.is_recurring) {
+        const nextDate = calculateNextDate(
+            task.due_date, 
+            task.recurrence_interval, 
+            task.recurrence_day_of_week, 
+            task.recurrence_custom_days
+        );
+
+        // Cria nova tarefa
+        const newTaskPayload = {
+            ...task,
+            id: undefined, // Remove ID para criar novo
+            created_at: undefined,
+            status: 'pendente', // Volta para o início
+            due_date: nextDate.toISOString(),
+            // Mantém as configurações de recorrência para a próxima também ser recorrente
+            is_recurring: true
+        };
+        
+        // Remove campos extras do objeto task que não vão para o banco (joins)
+        delete newTaskPayload.client;
+        delete newTaskPayload.assignee;
+        delete newTaskPayload.client_name;
+        delete newTaskPayload.assignee_name;
+        delete newTaskPayload.dueDate; // Usamos due_date no banco
+
+        const { data: createdTask, error } = await supabase.from('tasks').insert(newTaskPayload).select().single();
+        
+        if (!error && createdTask) {
+            toast({ title: "Tarefa recorrente gerada", description: `Agendada para ${format(nextDate, 'dd/MM/yyyy')}`, className: "bg-blue-600 text-white" });
+            fetchData(); // Recarrega para trazer a nova tarefa
+        }
+    }
   };
 
   const addColumn = () => { if (!newColumnTitle.trim()) return; const id = newColumnTitle.toLowerCase().replace(/\s+/g, '_'); if (columns.some(c => c.id === id)) { toast({ title: "Coluna já existe" }); return; } const newCols = [...columns, { id, title: newColumnTitle, color: 'bg-slate-200', description: newColumnDesc }]; saveColumnsToDb(newCols); setNewColumnTitle(''); setNewColumnDesc(''); };
@@ -653,14 +750,28 @@ function TasksView() {
   const moveColumn = (index: number, direction: 'up' | 'down') => { if ((direction === 'up' && index === 0) || (direction === 'down' && index === columns.length - 1)) return; const newCols = [...columns]; const targetIndex = direction === 'up' ? index - 1 : index + 1; [newCols[index], newCols[targetIndex]] = [newCols[targetIndex], newCols[index]]; saveColumnsToDb(newCols); };
 
   const openEditModal = (task: any) => {
-      // TRAVA DE SEGURANÇA
       if (!can('tasks', 'edit')) {
           toast({ title: "Acesso Negado", description: "Apenas visualização permitida.", variant: "destructive" });
           return;
       }
       setEditingTask(task); setActiveTab('details');
       let formattedDate = ''; if (task.dueDate) { if (task.dueDate.includes('T')) formattedDate = task.dueDate.split('T')[0]; else formattedDate = task.dueDate; }
-      reset({ title: task.title, description: task.description || '', priority: task.priority, status: task.status, dueDate: formattedDate, assignedTo: task.assignee_id || '', clientId: task.client_id || '', subProject: task.sub_project || '' });
+      
+      reset({ 
+          title: task.title, 
+          description: task.description || '', 
+          priority: task.priority, 
+          status: task.status, 
+          dueDate: formattedDate, 
+          assignedTo: task.assignee_id || '', 
+          clientId: task.client_id || '', 
+          subProject: task.sub_project || '',
+          // Recorrência
+          isRecurring: task.is_recurring || false,
+          recurrenceInterval: task.recurrence_interval || '',
+          recurrenceDayOfWeek: task.recurrence_day_of_week || '',
+          recurrenceCustomDays: task.recurrence_custom_days || ''
+      });
       fetchComments(task.id); setIsModalOpen(true);
   };
 
@@ -678,18 +789,14 @@ function TasksView() {
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border dark:border-slate-800 flex flex-col md:flex-row gap-4 justify-between items-center">
             <div className="flex items-center gap-2 w-full md:w-auto flex-1"><Search className="h-4 w-4 text-slate-400"/><input placeholder="Buscar tarefas..." className="bg-transparent outline-none dark:text-white w-full" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div>
             <div className="flex gap-2">
-                {/* BOTÃO COLUNAS (Só se puder editar) */}
                 {can('tasks', 'edit') && (
                     <button onClick={() => setIsColumnsModalOpen(true)} className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-slate-50 text-xs dark:text-white dark:hover:bg-slate-800"><Settings className="h-4 w-4" /> Colunas</button>
                 )}
-                
                 <button onClick={() => setIsFilterModalOpen(true)} className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-slate-50 text-xs dark:text-white dark:hover:bg-slate-800"><Filter className="h-4 w-4" /> Filtros</button>
                 <div className="flex bg-slate-100 dark:bg-slate-800 rounded p-1">
                     <button onClick={() => setViewMode('kanban')} className={`p-2 rounded ${viewMode==='kanban' ? 'bg-white dark:bg-slate-600 shadow' : ''}`}><LayoutGrid className="h-4 w-4"/></button>
                     <button onClick={() => setViewMode('list')} className={`p-2 rounded ${viewMode==='list' ? 'bg-white dark:bg-slate-600 shadow' : ''}`}><List className="h-4 w-4"/></button>
                 </div>
-                
-                {/* BOTÃO NOVA TAREFA (Só se puder criar) */}
                 {can('tasks', 'create') && (
                     <Button onClick={() => { setEditingTask(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 text-white"><Plus className="mr-2 h-4 w-4"/> Nova Tarefa</Button>
                 )}
@@ -700,10 +807,54 @@ function TasksView() {
             <DndContext collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
                 <div className="flex gap-4 overflow-x-auto min-h-[500px] pb-4">
                     {columns.map(col => (
-                        <div key={col.id} className="min-w-[280px]">
-                            <KanbanColumn id={col.id} title={col.title} color={col.color} description={col.description} tasks={tasksByStatus[col.id] || []}>
+                        // CORREÇÃO ERRO 3: Aplicamos a borda colorida AQUI, na div pai, não no KanbanColumn
+                        <div key={col.id} className={`min-w-[280px] rounded-xl border-t-4 ${col.color ? col.color.replace('bg-', 'border-') : 'border-slate-400'}`}>
+                            
+                            {/* CABEÇALHO COM SELETOR DE COR */}
+                            <div className="flex items-center justify-between mb-2 px-1 pt-2">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="font-semibold text-slate-700 dark:text-slate-300 text-sm">{col.title}</h3>
+                                    <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">{tasksByStatus[col.id]?.length || 0}</span>
+                                </div>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <button className={`w-4 h-4 rounded-full ${col.color || 'bg-slate-400'} ring-2 ring-offset-1 ring-transparent hover:ring-slate-300 transition-all`}></button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-48 p-2" align="end">
+                                        <p className="text-xs font-semibold mb-2 ml-1 text-slate-500">Cor da coluna</p>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {COLUMN_COLORS.map(color => (
+                                                <button
+                                                    key={color.value}
+                                                    className={`w-8 h-8 rounded-full ${color.value} hover:scale-110 transition-transform ring-1 ring-slate-200`}
+                                                    onClick={() => updateColumnColor(col.id, color.value)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                            
+                            {/* CORREÇÃO ERRO 3: Removemos className daqui */}
+                            <KanbanColumn 
+                                id={col.id} 
+                                title="" 
+                                color="transparent" 
+                                description={col.description} 
+                                tasks={tasksByStatus[col.id] || []}
+                            >
                                 {(tasksByStatus[col.id] || []).map((task: any) => (
-                                    <SortableTaskCard key={task.id} task={task} clientName={task.client_name} getPriorityColor={getPriorityColor} openEditModal={openEditModal} deleteTask={() => handleDeleteTask(task.id)} />
+                                    // CORREÇÃO ERRO 4: Removemos os children (o ícone Repeat dentro do card)
+                                    // O componente SortableTaskCard é self-closing agora para evitar o erro de tipagem.
+                                    <SortableTaskCard 
+                                        key={task.id} 
+                                        task={task} 
+                                        clientName={task.client_name} 
+                                        getPriorityColor={getPriorityColor} 
+                                        openEditModal={openEditModal} 
+                                        deleteTask={() => handleDeleteTask(task.id)} 
+                                        onCardClick={() => openEditModal(task)}
+                                    />
                                 ))}
                             </KanbanColumn>
                         </div>
@@ -715,14 +866,17 @@ function TasksView() {
                 {filteredTasks.map(t => (
                     <div key={t.id} className="p-4 bg-white dark:bg-slate-900 border rounded flex justify-between items-center group hover:shadow-sm transition-all">
                         <div>
-                             <div className="flex items-center gap-2"><h4 className="font-bold">{t.title}</h4>{t.sub_project && <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 border dark:border-slate-700">{t.sub_project}</span>}{getDeadlineBadge(t)}</div>
+                             <div className="flex items-center gap-2">
+                                 <h4 className="font-bold">{t.title}</h4>
+                                 {t.is_recurring && <div title="Recorrente"><Repeat className="h-3 w-3 text-blue-500"/></div>}
+                                 {t.sub_project && <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 border dark:border-slate-700">{t.sub_project}</span>}
+                                 {getDeadlineBadge(t)}
+                             </div>
                             <p className="text-sm text-slate-500">{t.client_name} - {t.assignee_name}</p>
                         </div>
                         <div className="flex items-center gap-2">
                             <span className={`px-2 py-1 rounded text-xs ${getPriorityColor(t.priority)}`}>{t.priority}</span>
                             <span className="text-xs bg-slate-100 px-2 py-1 rounded">{columns.find(c => c.id === t.status)?.title || t.status}</span>
-                            
-                            {/* BOTOES DA LISTA (Respeitando permissões) */}
                             {can('tasks', 'edit') && <Button variant="outline" size="sm" onClick={() => openEditModal(t)}>Editar</Button>}
                             {can('tasks', 'delete') && <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(t.id)}><Trash2 className="h-4 w-4 text-red-500"/></Button>}
                         </div>
@@ -731,15 +885,13 @@ function TasksView() {
             </div>
         )}
 
-        {/* MODAL NOVA TAREFA E MODAIS DE FILTRO/COLUNAS (Manter iguais, pois o controle é no botão de abrir) */}
         {isModalOpen && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full flex flex-col border dark:border-slate-800 shadow-2xl">
+                <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full flex flex-col border dark:border-slate-800 shadow-2xl max-h-[90vh] overflow-y-auto">
                     <div className="p-6 border-b flex justify-between">
                         <h2 className="text-xl font-bold">{editingTask ? 'Editar' : 'Nova Tarefa'}</h2>
                         <button onClick={() => setIsModalOpen(false)}><X/></button>
                     </div>
-                    {/* ... Resto do Modal de Tarefa (Copiar do seu código original) ... */}
                     {editingTask && (<div className="flex border-b px-6"><button onClick={() => setActiveTab('details')} className={`py-3 px-4 ${activeTab === 'details' ? 'border-b-2 border-blue-500 font-bold' : ''}`}>Dados</button><button onClick={() => setActiveTab('comments')} className={`py-3 px-4 ${activeTab === 'comments' ? 'border-b-2 border-blue-500 font-bold' : ''}`}>Observações</button></div>)}
                     <div className="p-6">
                         <div className={activeTab === 'details' ? 'block' : 'hidden'}>
@@ -749,6 +901,64 @@ function TasksView() {
                                 <div className="grid grid-cols-2 gap-4"><div><label className="text-sm">Cliente</label><select {...register('clientId')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="">Selecione...</option>{clients.map(c => (<option key={c.id} value={c.id}>{c.company ? c.company : c.name}</option>))}</select></div><div><label className="text-sm">Frente / Sub-Projeto</label><select {...register('subProject')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700" disabled={availableSubProjects.length === 0}><option value="">{availableSubProjects.length > 0 ? 'Selecione...' : 'Nenhuma frente'}</option>{availableSubProjects.map(sp => <option key={sp} value={sp}>{sp}</option>)}</select></div></div>
                                 <div className="grid grid-cols-2 gap-4"><div><label className="text-sm">Responsável</label><select {...register('assignedTo')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="">Selecione...</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></div><div><label className="text-sm">Prioridade</label><select {...register('priority')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="media">Média</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></div></div>
                                 <div className="grid grid-cols-2 gap-4"><div><label className="text-sm">Prazo</label><Input type="date" {...register('dueDate')}/></div><div><label className="text-sm">Status</label><select {...register('status')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">{columns.map(col => (<option key={col.id} value={col.id}>{col.title}</option>))}</select></div></div>
+                                
+                                {/* SEÇÃO DE RECORRÊNCIA */}
+                                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border dark:border-slate-800 space-y-4 mt-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <RefreshCw className="h-4 w-4 text-slate-500" />
+                                            <Label htmlFor="recurring-switch" className="cursor-pointer font-medium">Repetir Tarefa?</Label>
+                                        </div>
+                                        <Switch 
+                                            id="recurring-switch" 
+                                            checked={isRecurring} 
+                                            onCheckedChange={(checked) => setValue('isRecurring', checked)} 
+                                        />
+                                    </div>
+
+                                    {isRecurring && (
+                                        <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2 duration-300">
+                                            <div className="col-span-2 sm:col-span-1">
+                                                <Label className="text-xs text-slate-500">Frequência</Label>
+                                                <select {...register('recurrenceInterval')} className="w-full p-2 text-sm border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">
+                                                    <option value="daily">Diário</option>
+                                                    <option value="weekly">Semanal</option>
+                                                    <option value="biweekly">Quinzenal</option>
+                                                    <option value="monthly">Mensal</option>
+                                                    <option value="custom">Personalizado</option>
+                                                </select>
+                                            </div>
+
+                                            {recurrenceInterval === 'weekly' && (
+                                                <div className="col-span-2 sm:col-span-1">
+                                                    <Label className="text-xs text-slate-500">Dia da Semana</Label>
+                                                    <select {...register('recurrenceDayOfWeek')} className="w-full p-2 text-sm border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">
+                                                        <option value="">Selecione...</option>
+                                                        <option value="0">Domingo</option>
+                                                        <option value="1">Segunda</option>
+                                                        <option value="2">Terça</option>
+                                                        <option value="3">Quarta</option>
+                                                        <option value="4">Quinta</option>
+                                                        <option value="5">Sexta</option>
+                                                        <option value="6">Sábado</option>
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            {recurrenceInterval === 'custom' && (
+                                                <div className="col-span-2 sm:col-span-1">
+                                                    <Label className="text-xs text-slate-500">A cada (dias)</Label>
+                                                    <Input type="number" min="1" {...register('recurrenceCustomDays')} className="h-9 dark:bg-slate-950" placeholder="Ex: 3" />
+                                                </div>
+                                            )}
+                                            
+                                            <div className="col-span-2 text-xs text-blue-600 dark:text-blue-400 italic">
+                                                * Uma nova tarefa será criada automaticamente quando esta for movida para "Concluída".
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <Button className="w-full bg-slate-900 text-white mt-4" type="submit">Salvar</Button>
                             </form>
                         </div>
@@ -758,10 +968,8 @@ function TasksView() {
             </div>
         )}
 
-        {/* MANTENHA OS OUTROS MODAIS (Colunas e Filtros) EXATAMENTE COMO ESTAVAM */}
         {isColumnsModalOpen && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                {/* ... Conteúdo do modal de colunas ... */}
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800 shadow-xl">
                     <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Gerenciar Colunas</h3><button onClick={() => setIsColumnsModalOpen(false)}><X/></button></div>
                     {!editingColumn ? (<div className="flex flex-col gap-2 mb-6 bg-slate-50 p-3 rounded-lg border"><h4 className="text-xs font-bold uppercase text-slate-500">Nova Coluna</h4><Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-950 h-8 text-sm"/><textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição (opcional)" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-950" /><Button onClick={addColumn} size="sm" className="w-full"><Plus className="h-4 w-4 mr-2"/> Adicionar</Button></div>) : (<div className="flex flex-col gap-2 mb-6 bg-blue-50 p-3 rounded-lg border border-blue-200"><h4 className="text-xs font-bold uppercase text-blue-600">Editando Coluna</h4><Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-950 h-8 text-sm"/><textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-950" /><div className="flex gap-2"><Button onClick={() => { setEditingColumn(null); setNewColumnTitle(''); setNewColumnDesc(''); }} variant="outline" size="sm" className="flex-1">Cancelar</Button><Button onClick={updateColumn} size="sm" className="flex-1"><Save className="h-4 w-4 mr-2"/> Salvar</Button></div></div>)}
@@ -772,7 +980,6 @@ function TasksView() {
 
         {isFilterModalOpen && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                {/* ... Conteúdo do modal de filtros ... */}
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
                     <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Filtros Avançados</h3><button onClick={() => setIsFilterModalOpen(false)}><X /></button></div>
                     <div className="space-y-3">
