@@ -105,7 +105,7 @@ const parseCSVRobust = (text: string): string[][] => {
   // Normaliza quebras de linha
   const cleanText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   
-  // Detecta separador (prioriza ; se houver conflito, mas aceita ,)
+  // Detecta separador
   const firstLineEnd = cleanText.indexOf('\n');
   const firstLine = cleanText.substring(0, firstLineEnd > -1 ? firstLineEnd : cleanText.length);
   const commaCount = (firstLine.match(/,/g) || []).length;
@@ -182,6 +182,9 @@ export default function CRMPage() {
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
+  // NOVO ESTADO PARA O FILTRO DE STATUS
+  const [statusFilter, setStatusFilter] = useState('active'); // 'active' (default), 'won', 'lost', 'all'
+
   const [transferTargetPipeline, setTransferTargetPipeline] = useState('');
   const [transferTargetStage, setTransferTargetStage] = useState('');
   const [targetStages, setTargetStages] = useState<PipelineStage[]>([]);
@@ -283,7 +286,7 @@ export default function CRMPage() {
     if (tsks) setTasks(tsks);
   };
 
-  // --- IMPORTADOR INTELIGENTE (Corrigido para o seu Modelo) ---
+  // --- IMPORTADOR ---
   const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -297,8 +300,6 @@ export default function CRMPage() {
     reader.onload = async (event) => {
       let text = event.target?.result as string;
       if (!text) return;
-
-      // Remove BOM
       if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
 
       const rows = parseCSVRobust(text);
@@ -308,16 +309,12 @@ export default function CRMPage() {
         return;
       }
 
-      // -- CORREÇÃO PARA O SEU MODELO (A, B, C...) --
-      // Verifica se a primeira linha é lixo (A,B,C,D...) e a ignora
       let headers = rows[0].map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
       let startRowIndex = 1;
 
-      // Se a primeira linha for A, B, C..., pegamos a segunda como cabeçalho
       if (headers.length > 0 && headers[0] === 'a' && headers[1] === 'b') {
          headers = rows[1].map(h => h.toLowerCase().trim().replace(/^"|"$/g, ''));
-         startRowIndex = 2; // Começa a ler dados da terceira linha
-         console.log("Detectado modelo com cabeçalho A,B,C... Ajustando.");
+         startRowIndex = 2; 
       }
       
       const newLeads: any[] = [];
@@ -325,11 +322,10 @@ export default function CRMPage() {
 
       const getIdx = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h === k || h.includes(k)));
 
-      const idxName = getIdx(['nome', 'name', 'cliente', 'lead', 'título', 'full name']);
+      const idxName = getIdx(['nome', 'name', 'cliente', 'lead', 'título', 'full name', 'contact']);
       const idxCompany = getIdx(['empresa', 'company', 'negócio']);
       const idxEmail = getIdx(['email', 'e-mail']);
       const idxPhone = getIdx(['telefone', 'phone', 'celular', 'whatsapp', 'tel']);
-      // ADICIONADO: Captura para Telefone 2
       const idxPhone2 = getIdx(['telefone 2', 'telefone2', 'celular 2', 'tel 2', 'phone 2']);
       const idxValue = getIdx(['valor', 'budget', 'venda', 'orcamento']);
       const idxCity = getIdx(['cidade', 'city']);
@@ -363,7 +359,7 @@ export default function CRMPage() {
             company: getVal(idxCompany),
             email: email,
             phone: getVal(idxPhone),
-            phone_secondary: getVal(idxPhone2), // Mapeia o telefone 2
+            phone_secondary: getVal(idxPhone2),
             budget: getVal(idxValue) || '0',
             city: getVal(idxCity),
             state: getVal(idxState),
@@ -452,6 +448,35 @@ export default function CRMPage() {
       if (selectedLead) fetchLeadDetails(selectedLead.id);
   };
 
+  // FUNÇÃO PARA MUDAR MANUALMENTE O ESTÁGIO (NOVO RECURSO)
+  const handleManualStageChange = async (leadId: string, newStageId: string) => {
+      // Atualização Otimista
+      setLeads(currentLeads => currentLeads.map(l => l.id === leadId ? { ...l, status: newStageId } : l));
+      
+      // Atualiza lead selecionado se estiver aberto no modal
+      if (selectedLead && selectedLead.id === leadId) {
+          setSelectedLead({ ...selectedLead, status: newStageId });
+      }
+
+      const { error } = await supabase.from('leads').update({ status: newStageId }).eq('id', leadId);
+      
+      if (error) {
+          toast({ title: "Erro ao atualizar", description: error.message, variant: "destructive" });
+          fetchLeads(currentPipelineId); // Reverte em caso de erro
+      } else {
+        // Verifica se foi movido para ganho para disparar o modal de venda
+        const targetStage = stages.find(s => s.id === newStageId);
+        const isWonStage = targetStage?.name.toLowerCase().includes('ganho') || targetStage?.name.toLowerCase().includes('fechado');
+        if (isWonStage) {
+             const lead = leads.find(l => l.id === leadId);
+             if (lead) {
+                 setPendingLeadToConvert(lead);
+                 setIsWonModalOpen(true);
+             }
+        }
+      }
+  };
+
   const onModalSubmit = async (data: LeadFormData) => {
     try {
       let finalSource = data.source;
@@ -496,6 +521,7 @@ export default function CRMPage() {
         if(error) throw error;
         setLeads(leads.filter(l => l.id !== id));
         toast({ title: "Excluído", description: "Lead removido do pipeline." });
+        if (isDetailModalOpen) setIsDetailModalOpen(false);
       } catch (error) {
         toast({ title: "Erro", description: "Erro ao excluir lead.", variant: "destructive" });
       }
@@ -649,16 +675,36 @@ export default function CRMPage() {
     await supabase.from('leads').update({ status: newStatusId }).eq('id', leadId);
   };
 
+  // --- FILTRAGEM AVANÇADA (Status Perdido Oculto por Padrão) ---
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
+        // Filtro de Texto
         const matchSearch = lead.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             lead.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             lead.phone.includes(searchTerm) ||
                             lead.company.toLowerCase().includes(searchTerm.toLowerCase());
+        // Filtro de Origem
         const matchSource = sourceFilter === 'all' || lead.source === sourceFilter;
-        return matchSearch && matchSource; 
+        
+        // Filtro de Status (Ocultar Perdidos)
+        const stage = stages.find(s => s.id === lead.status);
+        const stageName = stage?.name.toLowerCase() || '';
+        const isLost = stageName.includes('perdido');
+        const isWon = stageName.includes('ganho') || stageName.includes('fechado');
+
+        let matchStatus = true;
+        if (statusFilter === 'active') {
+            matchStatus = !isLost; // Padrão: Oculta perdidos
+        } else if (statusFilter === 'lost') {
+            matchStatus = isLost;
+        } else if (statusFilter === 'won') {
+            matchStatus = isWon;
+        }
+        // statusFilter === 'all' retorna tudo (inclusive perdidos)
+
+        return matchSearch && matchSource && matchStatus; 
     });
-  }, [leads, searchTerm, sourceFilter]);
+  }, [leads, searchTerm, sourceFilter, statusFilter, stages]);
 
   const leadsByStage = useMemo(() => {
       const grouped: Record<string, Lead[]> = {};
@@ -690,12 +736,6 @@ export default function CRMPage() {
           default: return { color: 'bg-yellow-100 text-yellow-600', icon: Minus };
       }
   };
-
-  const openDetailModal = (lead: Lead) => {
-      setSelectedLead(lead);
-      fetchLeadDetails(lead.id);
-      setIsDetailModalOpen(true);
-  }
 
   const copyWebhook = () => { navigator.clipboard.writeText(webhookUrl); toast({ title: "Copiado!" }); }
 
@@ -759,6 +799,15 @@ export default function CRMPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input placeholder="Buscar por nome, email, telefone..." className="w-full pl-10 pr-4 py-2 border rounded-lg bg-transparent dark:text-white dark:border-slate-700" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
             </div>
+            
+            {/* FILTRO DE STATUS */}
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-2 border rounded-lg bg-transparent dark:text-white dark:bg-slate-900 dark:border-slate-700">
+                <option value="active">Em Aberto (Ocultar Perdidos)</option>
+                <option value="won">Ganhos</option>
+                <option value="lost">Perdidos</option>
+                <option value="all">Todos</option>
+            </select>
+
             <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="px-3 py-2 border rounded-lg bg-transparent dark:text-white dark:bg-slate-900 dark:border-slate-700">
                 <option value="all">Todas as Fontes</option>
                 {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -774,6 +823,11 @@ export default function CRMPage() {
                     <div className="flex gap-4 h-full" style={{ minWidth: `${stages.length * 320}px` }}>
                       {stages.map(stage => {
                             const leadsInStage = leadsByStage[stage.id] || [];
+                            
+                            // Se for coluna de "Perdido" e o filtro for "Active", podemos ocultar a coluna inteira se quiser,
+                            // mas o pedido foi ocultar os leads. A lógica `leadsByStage` já usa `filteredLeads` que filtra os leads.
+                            // Então a coluna ficará vazia se "active" for selecionado.
+                            
                             return (
                                 <div key={stage.id} className="flex flex-col h-full w-80">
                                     <div className="mb-3">
@@ -835,8 +889,23 @@ export default function CRMPage() {
           <div className="fixed inset-0 bg-black/60 z-50 flex justify-end">
               <div className="w-full max-w-xl bg-white dark:bg-slate-950 h-full shadow-2xl p-6 border-l dark:border-slate-800 overflow-y-auto animate-in slide-in-from-right">
                   <div className="flex justify-between items-start mb-6">
-                      <div>
+                      <div className="flex-1">
                           <h2 className="text-2xl font-bold dark:text-white">{selectedLead.title}</h2>
+                          
+                          {/* SELETOR DE MUDANÇA DE ESTÁGIO (NOVO) */}
+                          <div className="mt-2 mb-2">
+                             <label className="text-xs text-slate-500 font-bold uppercase">Fase do Funil</label>
+                             <select 
+                                className="w-full mt-1 p-2 border rounded-md dark:bg-slate-900 dark:border-slate-700 text-sm"
+                                value={selectedLead.status}
+                                onChange={(e) => handleManualStageChange(selectedLead.id, e.target.value)}
+                             >
+                                {stages.map(s => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                             </select>
+                          </div>
+
                           <div className="flex flex-wrap gap-2 mt-2">
                                {selectedLead.company && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><FileText className="h-3 w-3"/> {selectedLead.company}</span>}
                                {selectedLead.city && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><MapPin className="h-3 w-3"/> {selectedLead.city}/{selectedLead.state}</span>}
@@ -846,7 +915,7 @@ export default function CRMPage() {
                           {selectedLead.phone_secondary && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Phone className="h-3 w-3"/> Tel 2: {formatPhone(selectedLead.phone_secondary)}</p>}
                           {selectedLead.owner_name && <p className="text-xs text-slate-500 mt-1">Dono: {selectedLead.owner_name}</p>}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 ml-4">
                           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openTransferModal(selectedLead)}><ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir</Button>
                           <button onClick={() => setIsDetailModalOpen(false)}><X/></button>
                       </div>
