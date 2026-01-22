@@ -509,7 +509,7 @@ const taskSchema = z.object({
   assignedTo: z.string().optional(),
   clientId: z.string().optional(),
   subProject: z.string().optional(),
-  // Campos de Recorrência
+  // Novos campos de recorrência
   isRecurring: z.boolean().optional(),
   recurrenceInterval: z.enum(['daily', 'weekly', 'biweekly', 'monthly', 'custom']).optional(),
   recurrenceDayOfWeek: z.string().optional(),
@@ -517,20 +517,23 @@ const taskSchema = z.object({
 });
 type TaskFormData = z.infer<typeof taskSchema>;
 
-// Cores disponíveis
+// Cores para as Colunas
 const COLUMN_COLORS = [
-  { name: 'Cinza', value: 'bg-slate-400' }, { name: 'Azul', value: 'bg-blue-500' },
-  { name: 'Verde', value: 'bg-green-500' }, { name: 'Amarelo', value: 'bg-yellow-500' },
-  { name: 'Vermelho', value: 'bg-red-500' }, { name: 'Roxo', value: 'bg-purple-500' },
-  { name: 'Laranja', value: 'bg-orange-500' }, { name: 'Preto', value: 'bg-slate-900' },
+  { name: 'Cinza', value: 'bg-slate-400' },
+  { name: 'Azul', value: 'bg-blue-500' },
+  { name: 'Verde', value: 'bg-green-500' },
+  { name: 'Amarelo', value: 'bg-yellow-500' },
+  { name: 'Vermelho', value: 'bg-red-500' },
+  { name: 'Roxo', value: 'bg-purple-500' },
+  { name: 'Laranja', value: 'bg-orange-500' },
+  { name: 'Preto', value: 'bg-slate-900' },
 ];
 
-// IDs PADRONIZADOS (todo, in_progress, done) para evitar erro de banco
 const DEFAULT_COLUMNS = [
-  { id: 'todo', title: 'Pendente', color: 'bg-slate-400', description: 'Tarefas aguardando início.' },
-  { id: 'in_progress', title: 'Em Andamento', color: 'bg-blue-500', description: 'Tarefas sendo executadas.' },
-  { id: 'done', title: 'Concluída', color: 'bg-green-500', description: 'Tarefas finalizadas.' },
-  { id: 'canceled', title: 'Cancelada', color: 'bg-red-500', description: 'Tarefas canceladas.' },
+  { id: 'pendente', title: 'Pendente', color: 'bg-slate-400', description: 'Tarefas aguardando início.' },
+  { id: 'em_andamento', title: 'Em Andamento', color: 'bg-blue-500', description: 'Tarefas sendo executadas no momento.' },
+  { id: 'concluida', title: 'Concluída', color: 'bg-green-500', description: 'Tarefas finalizadas e entregues.' },
+  { id: 'cancelada', title: 'Cancelada', color: 'bg-red-500', description: 'Tarefas que não serão mais realizadas.' },
 ];
 
 // --- FUNÇÃO TASKSVIEW ATUALIZADA ---
@@ -540,24 +543,19 @@ function TasksView() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isColumnsModalOpen, setIsColumnsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<any | null>(null);
   
-  // Colunas
-  const [columns, setColumns] = useState<any[]>(DEFAULT_COLUMNS); // Inicia com padrão
+  const [columns, setColumns] = useState<any[]>([]);
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [newColumnDesc, setNewColumnDesc] = useState('');
   const [editingColumn, setEditingColumn] = useState<any | null>(null);
 
-  // Dados
   const [clients, setClients] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [availableSubProjects, setAvailableSubProjects] = useState<string[]>([]);
-  
-  // View & Filtros
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -571,9 +569,9 @@ function TasksView() {
   const [deadlineFilter, setDeadlineFilter] = useState('all');
   
   const { register, handleSubmit, reset, watch, setValue } = useForm<TaskFormData>({ resolver: zodResolver(taskSchema) });
-  
-  // Watchers
   const selectedClientId = watch('clientId');
+  
+  // Watchers para recorrência
   const isRecurring = watch('isRecurring');
   const recurrenceInterval = watch('recurrenceInterval');
   
@@ -582,11 +580,8 @@ function TasksView() {
   const fetchColumns = async () => {
       try {
           const { data, error } = await supabase.from('app_settings').select('value').eq('key', 'kanban_columns').single();
-          if (data?.value && Array.isArray(data.value) && data.value.length > 0) {
-              setColumns(data.value);
-          } else {
-              setColumns(DEFAULT_COLUMNS);
-          }
+          if (data?.value) setColumns(data.value);
+          else setColumns(DEFAULT_COLUMNS);
       } catch (err) { console.error(err); }
   };
 
@@ -597,6 +592,7 @@ function TasksView() {
       catch (err) { toast({ title: "Erro ao salvar", variant: "destructive" }); }
   };
 
+  // Função para atualizar cor da coluna
   const updateColumnColor = (colId: string, newColor: string) => {
       const newCols = columns.map(c => c.id === colId ? { ...c, color: newColor } : c);
       saveColumnsToDb(newCols);
@@ -615,29 +611,13 @@ function TasksView() {
     if (c) setClients(c);
     const { data: p } = await supabase.from('profiles').select('id, full_name, email');
     if (p) setTeamMembers(p);
-    
-    // Select seguro
-    const { data: t, error } = await supabase.from('tasks').select('*, client:clients(name, company), assignee:profiles(full_name)').order('created_at', {ascending:false});
-    
-    if (error) {
-        console.error("Erro ao buscar tarefas:", error);
-        toast({ title: "Erro ao carregar tarefas", description: error.message, variant: "destructive" });
-    }
-    
-    if (t) {
-        const mappedTasks = t.map((task: any) => ({
-            ...task,
-            dueDate: task.due_date, // Mapeamento essencial
-            client_name: task.client?.company || task.client?.name,
-            assignee_name: task.assignee?.full_name
-        }));
-        setTasks(mappedTasks);
-    }
+    const { data: t } = await supabase.from('tasks').select('*, client:clients(name, company), assignee:profiles(full_name)').order('created_at', {ascending:false});
+    if (t) setTasks(t.map((task: any) => ({ ...task, dueDate: task.due_date, client_name: task.client?.company || task.client?.name, assignee_name: task.assignee?.full_name })));
     setLoading(false);
   };
 
   const getTaskDeadlineStatus = (task: any) => {
-      if (!task.dueDate || task.status === 'concluida' || task.status === 'done' || task.status === 'cancelada' || task.status === 'canceled') return 'on_time';
+      if (!task.dueDate || task.status === 'concluida' || task.status === 'cancelada') return 'on_time';
       const today = new Date(); today.setHours(0,0,0,0);
       let dateStr = task.dueDate; if (!dateStr.includes('T')) dateStr += 'T12:00:00';
       const due = new Date(dateStr); due.setHours(0,0,0,0);
@@ -646,57 +626,72 @@ function TasksView() {
       return 'on_time';
   };
 
-  // Cálculo de data futura (seguro)
-  const calculateNextDate = (baseDate: string | Date, interval: string, dayOfWeek?: string, customDays?: string) => {
-      const start = baseDate ? new Date(baseDate) : new Date();
-      const effectiveStart = start < new Date() ? new Date() : start;
-      try {
-        switch(interval) {
-            case 'daily': return addDays(effectiveStart, 1);
-            case 'weekly': return dayOfWeek ? nextDay(effectiveStart, Number(dayOfWeek) as any) : addWeeks(effectiveStart, 1);
-            case 'biweekly': return addWeeks(effectiveStart, 2);
-            case 'monthly': return addMonths(effectiveStart, 1);
-            case 'custom': return addDays(effectiveStart, Number(customDays) || 1);
-            default: return addDays(effectiveStart, 1);
-        }
-      } catch (e) { return addDays(new Date(), 1); }
-  };
-
   const filteredTasks = tasks.filter(t => {
-      const matchSearch = t.title?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
+      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
       const matchPriority = priorityFilter === 'all' || t.priority === priorityFilter;
       const matchClient = clientFilter === 'all' || t.client_id === clientFilter;
       const matchAssignee = assigneeFilter === 'all' || t.assignee_id === assigneeFilter;
       const matchSubProject = subProjectFilter === 'all' || t.sub_project === subProjectFilter;
-      
       const deadlineStatus = getTaskDeadlineStatus(t);
-      const matchDeadline = deadlineFilter === 'all' || 
-                            (deadlineFilter === 'overdue' && deadlineStatus === 'overdue') || 
-                            (deadlineFilter === 'today' && deadlineStatus === 'today') || 
-                            (deadlineFilter === 'on_time' && deadlineStatus === 'on_time');
-      
+      const matchDeadline = deadlineFilter === 'all' || (deadlineFilter === 'overdue' && deadlineStatus === 'overdue') || (deadlineFilter === 'today' && deadlineStatus === 'today') || (deadlineFilter === 'on_time' && deadlineStatus === 'on_time');
       return matchSearch && matchPriority && matchClient && matchAssignee && matchSubProject && matchDeadline;
   });
 
-  const tasksByStatus = filteredTasks.reduce((acc, t) => { 
-      // Normalização de segurança: se o status não existir nas colunas, joga para o primeiro (fallback) ou mantém
-      const statusKey = t.status || 'todo';
-      acc[statusKey] = acc[statusKey] || []; 
-      acc[statusKey].push(t); 
-      return acc; 
-  }, {} as any);
-
+  const tasksByStatus = filteredTasks.reduce((acc, t) => { acc[t.status] = acc[t.status] || []; acc[t.status].push(t); return acc; }, {} as any);
   const stats = { total: filteredTasks.length, overdue: tasks.filter(t => getTaskDeadlineStatus(t) === 'overdue').length };
 
-  const onSubmit = async (data: TaskFormData) => {
-    // Verificações de permissão
-    if (editingTask && !can('tasks', 'edit')) { toast({ title: "Acesso Negado", description: "Sem permissão para editar.", variant: "destructive" }); return; }
-    if (!editingTask && !can('tasks', 'create')) { toast({ title: "Acesso Negado", description: "Sem permissão para criar.", variant: "destructive" }); return; }
+  // --- LÓGICA DE CÁLCULO DE DATA FUTURA ---
+  const calculateNextDate = (baseDate: string | Date, interval: string, dayOfWeek?: string, customDays?: string) => {
+      const start = baseDate ? new Date(baseDate) : new Date();
+      // Se a data base for passado, usa hoje
+      const effectiveStart = start < new Date() ? new Date() : start;
+      
+      switch(interval) {
+          case 'daily': return addDays(effectiveStart, 1);
+          case 'weekly': 
+              if(dayOfWeek) return nextDay(effectiveStart, Number(dayOfWeek) as any);
+              return addWeeks(effectiveStart, 1);
+          case 'biweekly': return addWeeks(effectiveStart, 2);
+          case 'monthly': return addMonths(effectiveStart, 1);
+          case 'custom': return addDays(effectiveStart, Number(customDays) || 1);
+          default: return addDays(effectiveStart, 1);
+      }
+  };
+
+const onSubmit = async (data: TaskFormData) => {
+    // 1. Verificações de Permissão
+    if (editingTask && !can('tasks', 'edit')) { 
+        toast({ title: "Acesso Negado", description: "Sem permissão para editar.", variant: "destructive" }); 
+        return; 
+    }
+    if (!editingTask && !can('tasks', 'create')) { 
+        toast({ title: "Acesso Negado", description: "Sem permissão para criar.", variant: "destructive" }); 
+        return; 
+    }
 
     const finalDate = data.dueDate ? `${data.dueDate}T12:00:00` : null;
     
-    // Payload preparado para o Banco
-    const payload = {
+    // 2. Tratamento ROBUSTO dos dados de Recorrência (AQUI ESTÁ A CORREÇÃO)
+    let recInterval = null;
+    let recDay = null;
+    let recCustom = null;
+
+    if (data.isRecurring) {
+        recInterval = data.recurrenceInterval;
+        
+        // Converte "0" (Domingo) ou "5" (Sexta) para número. Se for vazio, vira null.
+        if (data.recurrenceDayOfWeek && data.recurrenceDayOfWeek !== "") {
+            recDay = Number(data.recurrenceDayOfWeek);
+        }
+
+        // Converte "10" (dias) para número. Se for vazio, vira null.
+        if (data.recurrenceCustomDays && data.recurrenceCustomDays !== "") {
+            recCustom = Number(data.recurrenceCustomDays);
+        }
+    }
+
+    // 3. Montagem do Payload
+    const payload: any = {
         title: data.title, 
         description: data.description, 
         priority: data.priority, 
@@ -705,15 +700,17 @@ function TasksView() {
         client_id: data.clientId || null, 
         assignee_id: data.assignedTo || null,
         sub_project: data.subProject || null,
-        // Recorrência
+        
+        // Campos de recorrência sanitizados
         is_recurring: data.isRecurring || false,
-        recurrence_interval: data.isRecurring ? data.recurrenceInterval : null,
-        recurrence_day_of_week: data.isRecurring ? data.recurrenceDayOfWeek : null,
-        recurrence_custom_days: data.isRecurring ? data.recurrenceCustomDays : null
+        recurrence_interval: recInterval,
+        recurrence_day_of_week: recDay,
+        recurrence_custom_days: recCustom
     };
     
     let error = null;
 
+    // 4. Envio para o Banco
     if (editingTask) {
         const { error: err } = await supabase.from('tasks').update(payload).eq('id', editingTask.id);
         error = err;
@@ -722,20 +719,27 @@ function TasksView() {
         error = err;
     }
     
-    // VERIFICAÇÃO CRÍTICA DE ERRO
+    // 5. Tratamento de Erros
     if (error) {
-        console.error("Erro ao salvar:", error);
-        toast({ title: "Erro ao salvar tarefa", description: error.message || "Verifique os dados e tente novamente.", variant: "destructive" });
+        console.error("Erro Supabase:", error);
+        if (error.message?.includes('invalid input syntax')) {
+             toast({ title: "Erro de Formato", description: "Verifique os campos de dias ou intervalo.", variant: "destructive" });
+        } else {
+             toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
+        }
     } else {
         setIsModalOpen(false); 
-        await fetchData(); // Recarrega os dados imediatamente
+        await fetchData(); 
         reset(); 
-        toast({ title: "Sucesso!", description: "Tarefa salva corretamente.", className: "bg-green-600 text-white" });
+        toast({ title: "Sucesso", description: "Tarefa salva corretamente.", className: "bg-green-600 text-white" });
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
-      if (!can('tasks', 'delete')) { toast({ title: "Acesso Negado", variant: "destructive" }); return; }
+      if (!can('tasks', 'delete')) {
+          toast({ title: "Acesso Negado", description: "Você não tem permissão para excluir tarefas.", variant: "destructive" });
+          return;
+      }
       if(!confirm("Tem certeza que deseja excluir esta tarefa?")) return;
       try {
           const { error } = await supabase.from('tasks').delete().eq('id', taskId);
@@ -752,50 +756,76 @@ function TasksView() {
     const newStatus = over.id as string;
     if (!columns.some(c => c.id === newStatus)) return;
     if (active.data.current?.sortable.containerId === newStatus) return;
-    
+
     const task = tasks.find(t => t.id === taskId);
     
     // Atualização otimista
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
     await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
 
-    // Lógica de Recorrência ao Concluir
-    if ((newStatus === 'concluida' || newStatus === 'done') && task.is_recurring) {
-        const nextDate = calculateNextDate(task.due_date, task.recurrence_interval, task.recurrence_day_of_week, task.recurrence_custom_days);
-        
-        // Remove IDs e limpa payload para nova tarefa
-        const newTaskPayload = {
-            title: task.title, description: task.description, priority: task.priority,
-            status: 'todo', // Volta para Pendente (usando ID padrão)
-            due_date: nextDate.toISOString(),
-            client_id: task.client_id, assignee_id: task.assignee_id, sub_project: task.sub_project,
-            is_recurring: true, recurrence_interval: task.recurrence_interval,
-            recurrence_day_of_week: task.recurrence_day_of_week, recurrence_custom_days: task.recurrence_custom_days
-        };
+    // --- LÓGICA DE RECORRÊNCIA AO CONCLUIR ---
+    if (newStatus === 'concluida' && task.is_recurring) {
+        const nextDate = calculateNextDate(
+            task.due_date, 
+            task.recurrence_interval, 
+            task.recurrence_day_of_week, 
+            task.recurrence_custom_days
+        );
 
-        const { error } = await supabase.from('tasks').insert(newTaskPayload);
-        if (!error) {
-            toast({ title: "Tarefa Recorrente Criada", description: `Agendada para ${format(nextDate, 'dd/MM/yyyy')}`, className: "bg-blue-600 text-white" });
-            fetchData();
+        // Cria nova tarefa
+        const newTaskPayload = {
+            ...task,
+            id: undefined, // Remove ID para criar novo
+            created_at: undefined,
+            status: 'pendente', // Volta para o início
+            due_date: nextDate.toISOString(),
+            // Mantém as configurações de recorrência para a próxima também ser recorrente
+            is_recurring: true
+        };
+        
+        // Remove campos extras do objeto task que não vão para o banco (joins)
+        delete newTaskPayload.client;
+        delete newTaskPayload.assignee;
+        delete newTaskPayload.client_name;
+        delete newTaskPayload.assignee_name;
+        delete newTaskPayload.dueDate; // Usamos due_date no banco
+
+        const { data: createdTask, error } = await supabase.from('tasks').insert(newTaskPayload).select().single();
+        
+        if (!error && createdTask) {
+            toast({ title: "Tarefa recorrente gerada", description: `Agendada para ${format(nextDate, 'dd/MM/yyyy')}`, className: "bg-blue-600 text-white" });
+            fetchData(); // Recarrega para trazer a nova tarefa
         }
     }
   };
 
-  const addColumn = () => { if (!newColumnTitle.trim()) return; const id = newColumnTitle.toLowerCase().replace(/\s+/g, '_'); if (columns.some(c => c.id === id)) { toast({ title: "Coluna já existe" }); return; } const newCols = [...columns, { id, title: newColumnTitle, color: 'bg-slate-400', description: newColumnDesc }]; saveColumnsToDb(newCols); setNewColumnTitle(''); setNewColumnDesc(''); };
+  const addColumn = () => { if (!newColumnTitle.trim()) return; const id = newColumnTitle.toLowerCase().replace(/\s+/g, '_'); if (columns.some(c => c.id === id)) { toast({ title: "Coluna já existe" }); return; } const newCols = [...columns, { id, title: newColumnTitle, color: 'bg-slate-200', description: newColumnDesc }]; saveColumnsToDb(newCols); setNewColumnTitle(''); setNewColumnDesc(''); };
   const updateColumn = () => { if (!editingColumn || !newColumnTitle.trim()) return; const newCols = columns.map(c => c.id === editingColumn.id ? { ...c, title: newColumnTitle, description: newColumnDesc } : c); saveColumnsToDb(newCols); setEditingColumn(null); setNewColumnTitle(''); setNewColumnDesc(''); };
-  const removeColumn = (id: string) => { if (tasks.some(t => t.status === id)) { toast({ title: "Impossível excluir", description: "Mova as tarefas antes.", variant: "destructive" }); return; } if (['todo', 'done', 'pendente', 'concluida'].includes(id)) { toast({ title: "Não permitido", description: "Colunas padrão protegidas." }); return; } const newCols = columns.filter(c => c.id !== id); saveColumnsToDb(newCols); };
+  const removeColumn = (id: string) => { if (tasks.some(t => t.status === id)) { toast({ title: "Impossível excluir", description: "Mova as tarefas desta coluna antes.", variant: "destructive" }); return; } if (['pendente', 'concluida'].includes(id)) { toast({ title: "Não permitido", description: "Colunas padrão não podem ser removidas." }); return; } const newCols = columns.filter(c => c.id !== id); saveColumnsToDb(newCols); };
   const moveColumn = (index: number, direction: 'up' | 'down') => { if ((direction === 'up' && index === 0) || (direction === 'down' && index === columns.length - 1)) return; const newCols = [...columns]; const targetIndex = direction === 'up' ? index - 1 : index + 1; [newCols[index], newCols[targetIndex]] = [newCols[targetIndex], newCols[index]]; saveColumnsToDb(newCols); };
 
   const openEditModal = (task: any) => {
-      if (!can('tasks', 'edit')) { toast({ title: "Acesso Negado", variant: "destructive" }); return; }
+      if (!can('tasks', 'edit')) {
+          toast({ title: "Acesso Negado", description: "Apenas visualização permitida.", variant: "destructive" });
+          return;
+      }
       setEditingTask(task); setActiveTab('details');
       let formattedDate = ''; if (task.dueDate) { if (task.dueDate.includes('T')) formattedDate = task.dueDate.split('T')[0]; else formattedDate = task.dueDate; }
       
       reset({ 
-          title: task.title, description: task.description || '', priority: task.priority, status: task.status, 
-          dueDate: formattedDate, assignedTo: task.assignee_id || '', clientId: task.client_id || '', subProject: task.sub_project || '',
-          isRecurring: task.is_recurring || false, recurrenceInterval: task.recurrence_interval || undefined,
-          recurrenceDayOfWeek: task.recurrence_day_of_week || undefined, recurrenceCustomDays: task.recurrence_custom_days || undefined
+          title: task.title, 
+          description: task.description || '', 
+          priority: task.priority, 
+          status: task.status, 
+          dueDate: formattedDate, 
+          assignedTo: task.assignee_id || '', 
+          clientId: task.client_id || '', 
+          subProject: task.sub_project || '',
+          // Recorrência
+          isRecurring: task.is_recurring || false,
+          recurrenceInterval: task.recurrence_interval || '',
+          recurrenceDayOfWeek: task.recurrence_day_of_week || '',
+          recurrenceCustomDays: task.recurrence_custom_days || ''
       });
       fetchComments(task.id); setIsModalOpen(true);
   };
@@ -803,7 +833,7 @@ function TasksView() {
   const fetchComments = async (taskId: string) => { const { data } = await supabase.from('task_comments').select('*, profiles(full_name)').eq('task_id', taskId).order('created_at'); if (data) setComments(data); };
   const handleAddComment = async () => { if(!newComment.trim() || !user) return; await supabase.from('task_comments').insert({ task_id: editingTask.id, user_id: user.id, content: newComment }); setNewComment(''); fetchComments(editingTask.id); };
   
-  const getPriorityColor = (priority: string) => { switch (priority) { case 'alta': return 'bg-red-100 text-red-700'; case 'media': return 'bg-yellow-100 text-yellow-700'; case 'baixa': return 'bg-green-100 text-green-700'; default: return 'bg-slate-100 text-slate-700'; } };
+  const getPriorityColor = (priority: string) => { switch (priority) { case 'alta': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'; case 'media': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'; case 'baixa': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'; default: return 'bg-slate-100 text-slate-700'; } };
   const allSubProjects = Array.from(new Set(tasks.map(t => t.sub_project).filter(Boolean)));
   const getDeadlineBadge = (task: any) => { const status = getTaskDeadlineStatus(task); if (status === 'overdue') return <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200"><AlertCircle className="h-3 w-3"/> Atrasada</span>; if (status === 'today') return <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded border border-amber-200"><Clock className="h-3 w-3"/> Vence Hoje</span>; return null; };
 
@@ -814,13 +844,17 @@ function TasksView() {
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border dark:border-slate-800 flex flex-col md:flex-row gap-4 justify-between items-center">
             <div className="flex items-center gap-2 w-full md:w-auto flex-1"><Search className="h-4 w-4 text-slate-400"/><input placeholder="Buscar tarefas..." className="bg-transparent outline-none dark:text-white w-full" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div>
             <div className="flex gap-2">
-                {can('tasks', 'edit') && ( <button onClick={() => setIsColumnsModalOpen(true)} className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-slate-50 text-xs dark:text-white dark:hover:bg-slate-800"><Settings className="h-4 w-4" /> Colunas</button> )}
+                {can('tasks', 'edit') && (
+                    <button onClick={() => setIsColumnsModalOpen(true)} className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-slate-50 text-xs dark:text-white dark:hover:bg-slate-800"><Settings className="h-4 w-4" /> Colunas</button>
+                )}
                 <button onClick={() => setIsFilterModalOpen(true)} className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-slate-50 text-xs dark:text-white dark:hover:bg-slate-800"><Filter className="h-4 w-4" /> Filtros</button>
                 <div className="flex bg-slate-100 dark:bg-slate-800 rounded p-1">
                     <button onClick={() => setViewMode('kanban')} className={`p-2 rounded ${viewMode==='kanban' ? 'bg-white dark:bg-slate-600 shadow' : ''}`}><LayoutGrid className="h-4 w-4"/></button>
                     <button onClick={() => setViewMode('list')} className={`p-2 rounded ${viewMode==='list' ? 'bg-white dark:bg-slate-600 shadow' : ''}`}><List className="h-4 w-4"/></button>
                 </div>
-                {can('tasks', 'create') && ( <Button onClick={() => { setEditingTask(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 text-white"><Plus className="mr-2 h-4 w-4"/> Nova Tarefa</Button> )}
+                {can('tasks', 'create') && (
+                    <Button onClick={() => { setEditingTask(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 text-white"><Plus className="mr-2 h-4 w-4"/> Nova Tarefa</Button>
+                )}
             </div>
         </div>
 
@@ -828,7 +862,9 @@ function TasksView() {
             <DndContext collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
                 <div className="flex gap-4 overflow-x-auto min-h-[500px] pb-4">
                     {columns.map(col => (
+                        // CORREÇÃO ERRO 3: Aplicamos a borda colorida AQUI, na div pai, não no KanbanColumn
                         <div key={col.id} className={`min-w-[280px] rounded-xl border-t-4 ${col.color ? col.color.replace('bg-', 'border-') : 'border-slate-400'}`}>
+                            
                             {/* CABEÇALHO COM SELETOR DE COR */}
                             <div className="flex items-center justify-between mb-2 px-1 pt-2">
                                 <div className="flex items-center gap-2">
@@ -837,22 +873,43 @@ function TasksView() {
                                 </div>
                                 <Popover>
                                     <PopoverTrigger asChild>
-                                        <button className={`w-4 h-4 rounded-full ${col.color || 'bg-slate-400'} ring-2 ring-offset-1 ring-transparent hover:ring-slate-300 transition-all`} title="Mudar cor"></button>
+                                        <button className={`w-4 h-4 rounded-full ${col.color || 'bg-slate-400'} ring-2 ring-offset-1 ring-transparent hover:ring-slate-300 transition-all`}></button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-48 p-2" align="end">
+                                        <p className="text-xs font-semibold mb-2 ml-1 text-slate-500">Cor da coluna</p>
                                         <div className="grid grid-cols-4 gap-2">
                                             {COLUMN_COLORS.map(color => (
-                                                <button key={color.value} className={`w-8 h-8 rounded-full ${color.value} hover:scale-110 transition-transform ring-1 ring-slate-200`} onClick={() => updateColumnColor(col.id, color.value)} />
+                                                <button
+                                                    key={color.value}
+                                                    className={`w-8 h-8 rounded-full ${color.value} hover:scale-110 transition-transform ring-1 ring-slate-200`}
+                                                    onClick={() => updateColumnColor(col.id, color.value)}
+                                                />
                                             ))}
                                         </div>
                                     </PopoverContent>
                                 </Popover>
                             </div>
                             
-                            {/* BODY DA COLUNA */}
-                            <KanbanColumn id={col.id} title="" description={col.description} tasks={tasksByStatus[col.id] || []} color="transparent">
+                            {/* CORREÇÃO ERRO 3: Removemos className daqui */}
+                            <KanbanColumn 
+                                id={col.id} 
+                                title="" 
+                                color="transparent" 
+                                description={col.description} 
+                                tasks={tasksByStatus[col.id] || []}
+                            >
                                 {(tasksByStatus[col.id] || []).map((task: any) => (
-                                    <SortableTaskCard key={task.id} task={task} clientName={task.client_name} getPriorityColor={getPriorityColor} openEditModal={openEditModal} deleteTask={() => handleDeleteTask(task.id)} onCardClick={() => openEditModal(task)} />
+                                    // CORREÇÃO ERRO 4: Removemos os children (o ícone Repeat dentro do card)
+                                    // O componente SortableTaskCard é self-closing agora para evitar o erro de tipagem.
+                                    <SortableTaskCard 
+                                        key={task.id} 
+                                        task={task} 
+                                        clientName={task.client_name} 
+                                        getPriorityColor={getPriorityColor} 
+                                        openEditModal={openEditModal} 
+                                        deleteTask={() => handleDeleteTask(task.id)} 
+                                        onCardClick={() => openEditModal(task)}
+                                    />
                                 ))}
                             </KanbanColumn>
                         </div>
@@ -865,10 +922,10 @@ function TasksView() {
                     <div key={t.id} className="p-4 bg-white dark:bg-slate-900 border rounded flex justify-between items-center group hover:shadow-sm transition-all">
                         <div>
                              <div className="flex items-center gap-2">
-                                <h4 className="font-bold">{t.title}</h4>
-                                {t.is_recurring && <div title="Recorrente"><Repeat className="h-3 w-3 text-blue-500"/></div>}
-                                {t.sub_project && <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 border dark:border-slate-700">{t.sub_project}</span>}
-                                {getDeadlineBadge(t)}
+                                 <h4 className="font-bold">{t.title}</h4>
+                                 {t.is_recurring && <div title="Recorrente"><Repeat className="h-3 w-3 text-blue-500"/></div>}
+                                 {t.sub_project && <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 border dark:border-slate-700">{t.sub_project}</span>}
+                                 {getDeadlineBadge(t)}
                              </div>
                             <p className="text-sm text-slate-500">{t.client_name} - {t.assignee_name}</p>
                         </div>
@@ -900,22 +957,59 @@ function TasksView() {
                                 <div className="grid grid-cols-2 gap-4"><div><label className="text-sm">Responsável</label><select {...register('assignedTo')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="">Selecione...</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></div><div><label className="text-sm">Prioridade</label><select {...register('priority')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="media">Média</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></div></div>
                                 <div className="grid grid-cols-2 gap-4"><div><label className="text-sm">Prazo</label><Input type="date" {...register('dueDate')}/></div><div><label className="text-sm">Status</label><select {...register('status')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">{columns.map(col => (<option key={col.id} value={col.id}>{col.title}</option>))}</select></div></div>
                                 
+                                {/* SEÇÃO DE RECORRÊNCIA */}
                                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border dark:border-slate-800 space-y-4 mt-4">
                                     <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2"><RefreshCw className="h-4 w-4 text-slate-500" /><Label htmlFor="recurring-switch" className="cursor-pointer font-medium">Repetir Tarefa?</Label></div>
-                                        <Switch id="recurring-switch" checked={isRecurring} onCheckedChange={(checked) => setValue('isRecurring', checked)} />
+                                        <div className="flex items-center gap-2">
+                                            <RefreshCw className="h-4 w-4 text-slate-500" />
+                                            <Label htmlFor="recurring-switch" className="cursor-pointer font-medium">Repetir Tarefa?</Label>
+                                        </div>
+                                        <Switch 
+                                            id="recurring-switch" 
+                                            checked={isRecurring} 
+                                            onCheckedChange={(checked) => setValue('isRecurring', checked)} 
+                                        />
                                     </div>
+
                                     {isRecurring && (
                                         <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2 duration-300">
                                             <div className="col-span-2 sm:col-span-1">
                                                 <Label className="text-xs text-slate-500">Frequência</Label>
                                                 <select {...register('recurrenceInterval')} className="w-full p-2 text-sm border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">
-                                                    <option value="daily">Diário</option><option value="weekly">Semanal</option><option value="biweekly">Quinzenal</option><option value="monthly">Mensal</option><option value="custom">Personalizado</option>
+                                                    <option value="daily">Diário</option>
+                                                    <option value="weekly">Semanal</option>
+                                                    <option value="biweekly">Quinzenal</option>
+                                                    <option value="monthly">Mensal</option>
+                                                    <option value="custom">Personalizado</option>
                                                 </select>
                                             </div>
-                                            {recurrenceInterval === 'weekly' && (<div className="col-span-2 sm:col-span-1"><Label className="text-xs text-slate-500">Dia da Semana</Label><select {...register('recurrenceDayOfWeek')} className="w-full p-2 text-sm border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="">Selecione...</option><option value="0">Domingo</option><option value="1">Segunda</option><option value="2">Terça</option><option value="3">Quarta</option><option value="4">Quinta</option><option value="5">Sexta</option><option value="6">Sábado</option></select></div>)}
-                                            {recurrenceInterval === 'custom' && (<div className="col-span-2 sm:col-span-1"><Label className="text-xs text-slate-500">A cada (dias)</Label><Input type="number" min="1" {...register('recurrenceCustomDays')} className="h-9 dark:bg-slate-950" placeholder="Ex: 3" /></div>)}
-                                            <div className="col-span-2 text-xs text-blue-600 dark:text-blue-400 italic">* Uma nova tarefa será criada automaticamente quando esta for movida para "Concluída".</div>
+
+                                            {recurrenceInterval === 'weekly' && (
+                                                <div className="col-span-2 sm:col-span-1">
+                                                    <Label className="text-xs text-slate-500">Dia da Semana</Label>
+                                                    <select {...register('recurrenceDayOfWeek')} className="w-full p-2 text-sm border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">
+                                                        <option value="">Selecione...</option>
+                                                        <option value="0">Domingo</option>
+                                                        <option value="1">Segunda</option>
+                                                        <option value="2">Terça</option>
+                                                        <option value="3">Quarta</option>
+                                                        <option value="4">Quinta</option>
+                                                        <option value="5">Sexta</option>
+                                                        <option value="6">Sábado</option>
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            {recurrenceInterval === 'custom' && (
+                                                <div className="col-span-2 sm:col-span-1">
+                                                    <Label className="text-xs text-slate-500">A cada (dias)</Label>
+                                                    <Input type="number" min="1" {...register('recurrenceCustomDays')} className="h-9 dark:bg-slate-950" placeholder="Ex: 3" />
+                                                </div>
+                                            )}
+                                            
+                                            <div className="col-span-2 text-xs text-blue-600 dark:text-blue-400 italic">
+                                                * Uma nova tarefa será criada automaticamente quando esta for movida para "Concluída".
+                                            </div>
                                         </div>
                                     )}
                                 </div>
