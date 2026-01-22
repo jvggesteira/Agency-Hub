@@ -11,7 +11,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { 
   Plus, UserPlus, X, ListTodo, History, Search, Copy, Upload, Download, FileText, CheckCircle, 
-  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Globe, Link as LinkIcon, Phone
+  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Globe, Link as LinkIcon, Phone, XCircle, AlertCircle
 } from 'lucide-react';
 import { usePermission } from '@/hooks/use-permission';
 import AccessDenied from '@/components/custom/access-denied';
@@ -155,6 +155,7 @@ export default function CRMPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isWonModalOpen, setIsWonModalOpen] = useState(false);
+  const [isLostModalOpen, setIsLostModalOpen] = useState(false); // NOVO
   const [isPipelineSettingsOpen, setIsPipelineSettingsOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
@@ -164,6 +165,9 @@ export default function CRMPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  
+  // Motivo da perda
+  const [lostReason, setLostReason] = useState(''); // NOVO
 
   // Atividades
   const [activities, setActivities] = useState<LeadActivity[]>([]);
@@ -176,7 +180,7 @@ export default function CRMPage() {
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('active'); 
+  const [statusFilter, setStatusFilter] = useState('active');
 
   const [transferTargetPipeline, setTransferTargetPipeline] = useState('');
   const [transferTargetStage, setTransferTargetStage] = useState('');
@@ -436,11 +440,50 @@ export default function CRMPage() {
       } else {
         const targetStage = stages.find(s => s.id === newStageId);
         const isWonStage = targetStage?.name.toLowerCase().includes('ganho') || targetStage?.name.toLowerCase().includes('fechado');
+        const isLostStage = targetStage?.name.toLowerCase().includes('perdido') || targetStage?.name.toLowerCase().includes('lost');
+        
         if (isWonStage) {
              const lead = leads.find(l => l.id === leadId);
              if (lead) { setPendingLeadToConvert(lead); setIsWonModalOpen(true); }
         }
+        // Se mudou para perdido manualmente via dropdown
+        if (isLostStage) {
+             // Opcional: Poderia abrir o modal de motivo aqui, mas como é troca rápida, deixa passar direto
+             toast({title: "Lead marcado como perdido", className: "bg-orange-500 text-white"});
+        }
       }
+  };
+
+  // --- NOVA FUNÇÃO: MARCAR COMO PERDIDO (COM MODAL) ---
+  const openLostModal = (lead: Lead) => {
+      setSelectedLead(lead);
+      setLostReason('');
+      setIsLostModalOpen(true);
+  };
+
+  const confirmLost = async () => {
+      if (!selectedLead) return;
+      const lostStage = stages.find(s => s.name.toLowerCase().includes('perdido') || s.name.toLowerCase().includes('lost'));
+      
+      if (!lostStage) {
+          toast({ title: "Erro", description: "Coluna de 'Perdido' não encontrada no funil.", variant: "destructive" });
+          return;
+      }
+
+      await supabase.from('leads').update({ status: lostStage.id }).eq('id', selectedLead.id);
+      
+      if (lostReason.trim()) {
+          await supabase.from('lead_activities').insert({ 
+              lead_id: selectedLead.id, 
+              type: 'status_change', 
+              content: `Marcado como Perdido. Motivo: ${lostReason}` 
+          });
+      }
+
+      setLeads(leads.map(l => l.id === selectedLead.id ? { ...l, status: lostStage.id } : l));
+      toast({ title: "Lead marcado como Perdido", className: "bg-gray-800 text-white" });
+      setIsLostModalOpen(false);
+      setIsDetailModalOpen(false);
   };
 
   const onModalSubmit = async (data: LeadFormData) => {
@@ -480,7 +523,7 @@ export default function CRMPage() {
   }
 
   const deleteLead = async (id: string) => {
-      if(!confirm("Excluir este lead?")) return;
+      if(!confirm("Excluir este lead definitivamente?")) return;
       try {
         const { error } = await supabase.from('leads').delete().eq('id', id);
         if(error) throw error;
@@ -631,7 +674,6 @@ export default function CRMPage() {
     await supabase.from('leads').update({ status: newStatusId }).eq('id', leadId);
   };
 
-  // --- FILTRAGEM AVANÇADA (LEADS) ---
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
         const matchSearch = lead.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -654,18 +696,16 @@ export default function CRMPage() {
     });
   }, [leads, searchTerm, sourceFilter, statusFilter, stages]);
 
-  // --- FILTRAGEM DE COLUNAS (NOVA LÓGICA) ---
-  // Isso oculta visualmente a coluna "Perdido" quando não estamos filtrando por perdidos.
   const filteredStages = useMemo(() => {
       return stages.filter(stage => {
           const name = stage.name.toLowerCase();
           const isLost = name.includes('perdido');
           const isWon = name.includes('ganho') || name.includes('fechado');
 
-          if (statusFilter === 'active') return !isLost; // Oculta Perdido no padrão
-          if (statusFilter === 'won') return isWon;      // Mostra só Ganho
-          if (statusFilter === 'lost') return isLost;    // Mostra só Perdido
-          return true; // All mostra tudo
+          if (statusFilter === 'active') return !isLost; 
+          if (statusFilter === 'won') return isWon;      
+          if (statusFilter === 'lost') return isLost;    
+          return true; 
       });
   }, [stages, statusFilter]);
 
@@ -692,7 +732,6 @@ export default function CRMPage() {
       return totals;
   }, [leadsByStage, stages]);
 
-  // Função para abrir o modal de detalhes (que estava faltando)
   const openDetailModal = (lead: Lead) => {
       setSelectedLead(lead);
       fetchLeadDetails(lead.id);
@@ -823,12 +862,14 @@ export default function CRMPage() {
                   <div className="flex justify-between items-start mb-6">
                       <div className="flex-1">
                           <h2 className="text-2xl font-bold dark:text-white">{selectedLead.title}</h2>
+                          
                           <div className="mt-2 mb-2">
                              <label className="text-xs text-slate-500 font-bold uppercase">Fase do Funil</label>
                              <select className="w-full mt-1 p-2 border rounded-md dark:bg-slate-900 dark:border-slate-700 text-sm" value={selectedLead.status} onChange={(e) => handleManualStageChange(selectedLead.id, e.target.value)}>
                                 {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                              </select>
                           </div>
+
                           <div className="flex flex-wrap gap-2 mt-2">
                                {selectedLead.company && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><FileText className="h-3 w-3"/> {selectedLead.company}</span>}
                                {selectedLead.city && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><MapPin className="h-3 w-3"/> {selectedLead.city}/{selectedLead.state}</span>}
@@ -838,14 +879,45 @@ export default function CRMPage() {
                           {selectedLead.phone_secondary && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Phone className="h-3 w-3"/> Tel 2: {formatPhone(selectedLead.phone_secondary)}</p>}
                           {selectedLead.owner_name && <p className="text-xs text-slate-500 mt-1">Dono: {selectedLead.owner_name}</p>}
                       </div>
-                      <div className="flex gap-2 ml-4">
-                          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openTransferModal(selectedLead)}><ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir</Button>
-                          <button onClick={() => setIsDetailModalOpen(false)}><X/></button>
+                      <div className="flex flex-col gap-2 ml-4">
+                          <Button size="sm" variant="outline" className="h-8 text-xs w-full" onClick={() => openTransferModal(selectedLead)}><ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir</Button>
+                          <Button size="sm" variant="destructive" className="h-8 text-xs w-full bg-red-100 text-red-600 hover:bg-red-200 border-none" onClick={() => openLostModal(selectedLead)}><XCircle className="h-3 w-3 mr-1"/> Marcar como Perdido</Button>
+                          <button onClick={() => setIsDetailModalOpen(false)} className="text-slate-400 hover:text-slate-600 self-end"><X/></button>
                       </div>
                   </div>
                   {selectedLead.notes && <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-900/30 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap"><strong>Notas/Histórico:</strong><br/>{selectedLead.notes}</div>}
-                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 mb-6"><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><ListTodo className="h-4 w-4" /> Tarefas</h3><div className="flex gap-2 mb-4"><Input placeholder="Nova tarefa..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="dark:bg-slate-950"/><Input type="datetime-local" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className="w-40 dark:bg-slate-950"/><Button size="sm" onClick={handleAddTask}><Plus className="h-4 w-4" /></Button></div><div className="space-y-2 max-h-60 overflow-y-auto">{tasks.map(task => (<div key={task.id} className="flex items-center gap-3 p-2 bg-white dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-800"><input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task.id, task.is_completed)} className="w-4 h-4 rounded"/><div className={`flex-1 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}><p className="text-sm font-medium">{task.title}</p><p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleString('pt-BR')}</p></div></div>))}</div></div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 mb-6"><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><ListTodo className="h-4 w-4" /> Tarefas</h3><div className="flex gap-2 mb-4"><Input placeholder="Nova tarefa..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="dark:bg-slate-900"/><Input type="datetime-local" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className="w-40 dark:bg-slate-950"/><Button size="sm" onClick={handleAddTask}><Plus className="h-4 w-4" /></Button></div><div className="space-y-2 max-h-60 overflow-y-auto">{tasks.map(task => (<div key={task.id} className="flex items-center gap-3 p-2 bg-white dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-800"><input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task.id, task.is_completed)} className="w-4 h-4 rounded"/><div className={`flex-1 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}><p className="text-sm font-medium">{task.title}</p><p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleString('pt-BR')}</p></div></div>))}</div></div>
                   <div><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><History className="h-4 w-4" /> Histórico & Notas</h3><div className="flex gap-2 mb-6"><Input placeholder="Adicionar nota..." value={newNote} onChange={e => setNewNote(e.target.value)} className="dark:bg-slate-900"/><Button size="sm" onClick={handleAddNote}>Enviar</Button></div><div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-3 space-y-6 pb-10">{activities.map((act) => (<div key={act.id} className="relative pl-6"><div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-950 ${act.type === 'status_change' ? 'bg-blue-500' : act.type === 'task_created' ? 'bg-orange-500' : 'bg-slate-400'}`}></div><div className="text-xs text-slate-400 mb-1">{new Date(act.created_at).toLocaleString('pt-BR')}</div><div className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg text-sm text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">{act.content}</div></div>))}</div></div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL MARCAR COMO PERDIDO (NOVO) */}
+      {isLostModalOpen && (
+          <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
+                  <div className="flex items-center gap-3 mb-4 text-red-600">
+                      <AlertCircle className="h-6 w-6"/>
+                      <h3 className="font-bold text-lg">Marcar como Perdido</h3>
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                      Este lead será movido para a etapa "Perdido" e ficará oculto da visão principal.
+                  </p>
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-sm font-medium">Motivo da perda (Opcional)</label>
+                          <textarea 
+                              className="w-full mt-1 p-2 border rounded-md dark:bg-slate-950 dark:border-slate-700 text-sm h-24 resize-none"
+                              placeholder="Ex: Preço alto, Fechou com concorrente..."
+                              value={lostReason}
+                              onChange={(e) => setLostReason(e.target.value)}
+                          />
+                      </div>
+                      <div className="flex gap-2">
+                          <Button variant="outline" className="flex-1" onClick={() => setIsLostModalOpen(false)}>Cancelar</Button>
+                          <Button variant="destructive" className="flex-1" onClick={confirmLost}>Confirmar</Button>
+                      </div>
+                  </div>
               </div>
           </div>
       )}
