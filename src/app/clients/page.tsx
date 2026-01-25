@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
 import { 
@@ -8,7 +9,7 @@ import {
   CheckSquare, Calendar, User, Target, Bell, LayoutGrid, List, MessageSquare, Send, Filter, TrendingUp, TrendingDown, Activity, Users, AlertTriangle, Info, Zap, RefreshCw,
   CheckCircle, Percent, Wallet, PieChart, Settings, ArrowUp, ArrowDown, HelpCircle, Save, CalendarDays,
   // Ícones adicionados para as novas funções:
-  Palette, Repeat, ChevronUp, ChevronDown, CheckCircle2 
+  Palette, Repeat, ChevronUp, ChevronDown, CheckCircle2, History
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -379,7 +380,16 @@ function ClientsView() {
                         {client.sub_projects && client.sub_projects.length > 0 && (<div className="flex flex-wrap gap-1 mt-2">{client.sub_projects.map((sp: string, i: number) => (<span key={i} className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 border dark:border-slate-700">{sp}</span>))}</div>)}
                     </div>
                     
-                    <div className="flex gap-2 pt-2 border-t dark:border-slate-800">
+                    <div className="flex flex-col gap-2 pt-2 border-t dark:border-slate-800">
+                        {/* NOVO BOTÃO DE ANALYTICS */}
+                    <Link href={`/clients/${client.id}/analytics`} className="w-full">
+                        <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold">
+                             Performance 🚀
+                        </Button>
+                    </Link>
+
+                    {/* MANTÉM OS BOTÕES ANTIGOS ABAIXO EM UMA LINHA */}
+                    <div className="flex gap-2 w-full">
                         {/* Botão Gerenciar (Editar) */}
                         {can('clients', 'edit') ? (
                             <Button variant="outline" className="flex-1" onClick={() => handleEdit(client)}>Gerenciar</Button>
@@ -400,73 +410,209 @@ function ClientsView() {
                         )}
                     </div>
                 </div>
+                </div>
                 )})}
         </div>
 
         {/* MODAL CLIENTE e CHURN (Mantidos iguais, pois o controle é no botão de abrir) */}
         {isModalOpen && (
-            // ... (Seu código do modal existente) ...
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-4xl w-full h-[85vh] flex flex-col border dark:border-slate-800 shadow-2xl">
-                    <div className="p-6 border-b dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950 rounded-t-xl">
-                        <h2 className="text-xl font-bold dark:text-white">{editingClient ? editingClient.name : 'Novo Cliente'}</h2>
-                        <button onClick={() => setIsModalOpen(false)}><X/></button>
+                    
+                    {/* CABEÇALHO DO MODAL */}
+                    <div className="flex flex-col bg-slate-50 dark:bg-slate-950 rounded-t-xl border-b dark:border-slate-800">
+                        <div className="p-6 flex justify-between items-center">
+                            <div>
+                                <h2 className="text-xl font-bold dark:text-white">
+                                    {editingClient ? editingClient.name : 'Novo Cliente'}
+                                </h2>
+                                {editingClient && <p className="text-xs text-slate-500">Gerencie dados, contratos e histórico.</p>}
+                            </div>
+                            <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors"><X className="h-5 w-5"/></button>
+                        </div>
+
+                        {/* --- AQUI ESTAVAM FALTANDO AS ABAS --- */}
+                        {editingClient && (
+                            <div className="flex px-6 gap-6 text-sm font-medium text-slate-500">
+                                <button 
+                                    onClick={() => setActiveTab('dados')} 
+                                    className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'dados' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}
+                                >
+                                    <User className="h-4 w-4"/> Dados Cadastrais
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('historico')} 
+                                    className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'historico' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}
+                                >
+                                    <History className="h-4 w-4"/> Histórico & CRM
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('docs')} 
+                                    className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'docs' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}
+                                >
+                                    <FileText className="h-4 w-4"/> Documentos
+                                </button>
+                            </div>
+                        )}
                     </div>
-                    <div className="flex-1 overflow-y-auto p-6">
+
+                    {/* CONTEÚDO DO MODAL */}
+                    <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-900">
+                        
+                        {/* ABA 1: DADOS (FORMULÁRIO) */}
                         {(!editingClient || activeTab === 'dados') && (
-                            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="text-sm">Nome da Empresa</label><Input {...register('company')} className="dark:bg-slate-900"/></div>
-                                    <div><label className="text-sm">Email</label><Input {...register('email')} className="dark:bg-slate-900"/></div>
+                            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Empresa / Nome Fantasia</label><Input {...register('company')} className="dark:bg-slate-950"/></div>
+                                    <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Email Principal</label><Input {...register('email')} className="dark:bg-slate-950"/></div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="text-sm">Nome do Responsável/Contato</label><Input {...register('name')} className="dark:bg-slate-900"/></div>
-                                    <div><label className="text-sm">Telefone</label><Input {...register('phone')} className="dark:bg-slate-900"/></div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Responsável</label><Input {...register('name')} className="dark:bg-slate-950"/></div>
+                                    <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Telefone / WhatsApp</label><Input {...register('phone')} className="dark:bg-slate-950"/></div>
                                 </div>
-                                {/* ... Resto do formulário ... */}
-                                {/* Vou resumir aqui para não ficar gigante, mantenha o conteúdo do seu form original */}
+
+                                {/* CAMPO ENDEREÇO RESTAURADO */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Endereço Completo</label>
+                                    <Input {...register('address')} placeholder="Rua, Número, Bairro, Cidade - UF" className="dark:bg-slate-950"/>
+                                </div>
+
+                                {/* FRENTES DE TRABALHO */}
                                 <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/30">
                                    <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-blue-800 dark:text-blue-300"><Folder className="h-4 w-4"/> Frentes de Trabalho / Sub-Clientes</h3>
                                     <div className="flex gap-2 mb-3">
-                                        <Input value={newSubProject} onChange={e => setNewSubProject(e.target.value)} placeholder="Ex: Só Multas B2B ou Cliente X" className="dark:bg-slate-950 h-9"/>
-                                        <Button type="button" onClick={handleAddSubProject} size="sm" className="bg-blue-600 text-white h-9">Adicionar</Button>
+                                        <Input value={newSubProject} onChange={e => setNewSubProject(e.target.value)} placeholder="Ex: Só Multas B2B ou Cliente X" className="dark:bg-slate-950 h-9 bg-white"/>
+                                        <Button type="button" onClick={handleAddSubProject} size="sm" className="bg-blue-600 text-white h-9 hover:bg-blue-700">Adicionar</Button>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {subProjects.map((sp, idx) => (
-                                            <span key={idx} className="bg-white dark:bg-slate-950 border px-2 py-1 rounded text-sm flex items-center gap-2">{sp}<button type="button" onClick={() => handleRemoveSubProject(idx)} className="text-red-500 hover:text-red-700"><X className="h-3 w-3"/></button></span>
+                                            <span key={idx} className="bg-white dark:bg-slate-950 border px-2 py-1 rounded text-sm flex items-center gap-2 text-slate-700 dark:text-slate-300 shadow-sm">{sp}<button type="button" onClick={() => handleRemoveSubProject(idx)} className="text-red-500 hover:text-red-700"><X className="h-3 w-3"/></button></span>
                                         ))}
                                     </div>
                                 </div>
-                                {/* ... Config Financeira ... */}
-                                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border dark:border-slate-800">
-                                    <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><DollarSign className="h-4 w-4"/> Configuração de Cobrança</h3>
-                                    <div className="grid grid-cols-3 gap-4 mb-4">
-                                        <div><label className="text-xs uppercase font-bold text-slate-500">Tipo</label><select {...register('feeType')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="fixed">Valor Fixo</option><option value="hybrid">Híbrido (Fixo + %)</option><option value="variable">Variável (Só %)</option></select></div>
-                                        <div><label className="text-xs uppercase font-bold text-slate-500">Duração</label><Input {...register('contractDuration')} type="number" className="dark:bg-slate-950"/></div>
-                                        <div><label className="text-xs uppercase font-bold text-slate-500">Início</label><Input {...register('contractStartDate')} type="date" className="dark:bg-slate-950"/></div>
+
+                                {/* CONFIGURAÇÃO FINANCEIRA */}
+                                <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                                    <h3 className="text-sm font-bold mb-4 flex items-center gap-2 text-slate-700 dark:text-white"><DollarSign className="h-4 w-4"/> Configuração de Cobrança (Contrato)</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                        <div><label className="text-[10px] uppercase font-bold text-slate-500">Modelo</label><select {...register('feeType')} className="w-full h-10 rounded-md border bg-white px-3 text-sm dark:border-slate-700 dark:text-white dark:bg-slate-900"><option value="fixed">Valor Fixo (Fee)</option><option value="hybrid">Híbrido (Fixo + %)</option><option value="variable">Variável (% Ads)</option></select></div>
+                                        <div><label className="text-[10px] uppercase font-bold text-slate-500">Duração (Meses)</label><Input {...register('contractDuration')} type="number" className="dark:bg-slate-900 bg-white"/></div>
+                                        <div><label className="text-[10px] uppercase font-bold text-slate-500">Início do Contrato</label><Input {...register('contractStartDate')} type="date" className="dark:bg-slate-900 bg-white"/></div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        {(feeType === 'fixed' || feeType === 'hybrid') && (<div><label className="text-xs uppercase font-bold text-slate-500">Valor Fixo</label><Input {...register('value')} onChange={handleCurrencyInput} className="dark:bg-slate-950 font-semibold text-green-600"/></div>)}
-                                        {(feeType === 'hybrid' || feeType === 'variable') && (<div><label className="text-xs uppercase font-bold text-slate-500">Comissão Ads (%)</label><Input {...register('commissionPercent')} className="dark:bg-slate-950 font-semibold text-purple-600"/></div>)}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {(feeType === 'fixed' || feeType === 'hybrid') && (<div><label className="text-[10px] uppercase font-bold text-slate-500">Valor Mensal (R$)</label><Input {...register('value')} onChange={handleCurrencyInput} className="dark:bg-slate-900 bg-white font-bold text-green-700" placeholder="R$ 0,00"/></div>)}
+                                        {(feeType === 'hybrid' || feeType === 'variable') && (<div><label className="text-[10px] uppercase font-bold text-slate-500">Comissão de Ads (%)</label><Input {...register('commissionPercent')} className="dark:bg-slate-900 bg-white font-bold text-purple-600" placeholder="Ex: 10"/></div>)}
                                     </div>
                                 </div>
-                                <div><label className="text-sm">Obs</label><textarea {...register('notes')} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white" rows={3}></textarea></div>
-                                <div className="flex justify-end pt-4"><Button type="submit" disabled={isSubmitting}>{isSubmitting ? <Loader2 className="animate-spin"/> : 'Salvar'}</Button></div>
+
+                                <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Observações Gerais</label><textarea {...register('notes')} className="w-full p-2 border rounded dark:bg-slate-950 dark:text-white dark:border-slate-700" rows={3}></textarea></div>
+                                
+                                <div className="flex justify-end pt-4 border-t dark:border-slate-800">
+                                    <Button type="submit" disabled={isSubmitting} className="bg-slate-900 text-white hover:bg-slate-800 px-8">
+                                        {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <><Save className="mr-2 h-4 w-4"/> Salvar Alterações</>}
+                                    </Button>
+                                </div>
                             </form>
                         )}
-                        {/* ... Abas Historico e Docs (Manter igual) ... */}
-                        {editingClient && activeTab === 'historico' && ( <div className="space-y-4">{logs.map(log => (<div key={log.id} className="border-l-2 pl-4 ml-2 border-slate-300"><p className="text-xs text-slate-400">{new Date(log.created_at).toLocaleString()}</p><p className="text-sm">{log.content}</p></div>))}</div> )}
+
+                        {/* ABA 2: HISTÓRICO (AGORA MOSTRA CRM) */}
+                        {editingClient && activeTab === 'historico' && ( 
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                                <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2"><History className="h-5 w-5"/> Linha do Tempo</h3>
+                                {logs.length === 0 ? (
+                                    <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-lg border border-dashed">Nenhum histórico registrado ainda.</div>
+                                ) : (
+                                    <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 pb-4">
+                                        {logs.map((log, idx) => (
+                                            <div key={log.id || idx} className="relative pl-8">
+                                                {/* Bolinha da Linha do Tempo */}
+                                                <div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-900 ${log.content?.includes('[CRM]') ? 'bg-blue-500' : 'bg-slate-400'}`}></div>
+                                                
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                                        {new Date(log.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                    
+                                                    {/* Card do Histórico */}
+                                                    <div className={`p-4 rounded-lg border text-sm ${log.content?.includes('[CRM]') ? 'bg-blue-50 border-blue-100 text-slate-800 dark:bg-blue-900/20 dark:border-blue-800 dark:text-slate-200' : 'bg-white border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}>
+                                                        {log.content?.includes('[CRM]') && (
+                                                            <span className="inline-block bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded mb-2 font-bold uppercase">Origem: CRM</span>
+                                                        )}
+                                                        <div className="whitespace-pre-wrap leading-relaxed">
+                                                            {log.content?.replace('[CRM]', '').trim()}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div> 
+                        )}
+
+                        {/* ABA 3: DOCUMENTOS (RESTAURADA) */}
                         {editingClient && activeTab === 'docs' && (
-                            <div>
-                                <div className="flex justify-between mb-4">
-                                    <div className="flex items-center gap-2">{currentFolder && <button onClick={() => setCurrentFolder(null)}><ChevronLeft/></button>} <span className="font-bold">{currentFolder || 'Pastas'}</span></div>
+                            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                                <div className="flex justify-between items-center mb-6 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border dark:border-slate-700">
+                                    <div className="flex items-center gap-2">
+                                        {currentFolder && <button onClick={() => setCurrentFolder(null)} className="hover:bg-slate-200 p-1 rounded"><ChevronLeft/></button>} 
+                                        <div className="flex flex-col">
+                                            <span className="text-xs text-slate-500 uppercase font-bold">Pasta Atual</span>
+                                            <span className="font-bold text-lg flex items-center gap-2 text-slate-800 dark:text-white">
+                                                <Folder className="h-5 w-5 text-blue-500"/> {currentFolder || 'Raiz (Todas as Pastas)'}
+                                            </span>
+                                        </div>
+                                    </div>
                                     <div className="flex gap-2">
-                                        {!currentFolder && <Button variant="outline" size="sm" onClick={handleCreateFolder}><FolderPlus className="h-4 w-4 mr-2"/> Pasta</Button>}
-                                        {currentFolder && <div><input type="file" id="up" className="hidden" onChange={handleFileUpload} disabled={uploading}/><label htmlFor="up" className="bg-blue-600 text-white px-3 py-2 rounded text-sm cursor-pointer">{uploading ? '...' : 'Upload'}</label></div>}
+                                        {!currentFolder && <Button variant="outline" size="sm" onClick={handleCreateFolder} className="bg-white dark:bg-slate-900"><FolderPlus className="h-4 w-4 mr-2"/> Nova Pasta</Button>}
+                                        {currentFolder && (
+                                            <div>
+                                                <input type="file" id="up" className="hidden" onChange={handleFileUpload} disabled={uploading}/>
+                                                <label htmlFor="up" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium cursor-pointer flex items-center gap-2 shadow-sm transition-all">
+                                                    {uploading ? <Loader2 className="animate-spin h-4 w-4"/> : <Upload className="h-4 w-4"/>} 
+                                                    {uploading ? 'Enviando...' : 'Enviar Arquivo'}
+                                                </label>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                {!currentFolder ? (<div className="grid grid-cols-3 gap-4">{allFolders.map(f => (<div key={f} onClick={() => setCurrentFolder(f)} className="bg-slate-50 dark:bg-slate-900 p-4 rounded border cursor-pointer hover:border-blue-500 flex flex-col items-center"><Folder className="h-8 w-8 text-blue-300"/> <span className="mt-2 text-sm font-medium">{f}</span></div>))}</div>) : 
-                                (<div className="space-y-2">{docs.filter(d => d.folder === currentFolder).map((doc, i) => (<div key={i} className="flex justify-between p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-900"><div className="flex items-center gap-2"><FileText className="h-4 w-4"/> <span className="truncate max-w-[200px]">{doc.name}</span></div><a href={doc.url} target="_blank" className="p-1"><Download className="h-4 w-4"/></a></div>))}</div>)}
+
+                                {!currentFolder ? (
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        {allFolders.map(f => (
+                                            <div key={f} onClick={() => setCurrentFolder(f)} className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center group">
+                                                <div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
+                                                    <Folder className="h-8 w-8 text-blue-500"/> 
+                                                </div>
+                                                <span className="font-bold text-slate-700 dark:text-slate-200">{f}</span>
+                                                <span className="text-xs text-slate-400 mt-1">{docs.filter(d => d.folder === f).length} arquivos</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {docs.filter(d => d.folder === currentFolder).length === 0 && (
+                                            <div className="text-center py-10 text-slate-400">Pasta vazia. Envie o primeiro arquivo.</div>
+                                        )}
+                                        {docs.filter(d => d.folder === currentFolder).map((doc, i) => (
+                                            <div key={i} className="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:shadow-sm transition-shadow group">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 bg-slate-100 dark:bg-slate-900 rounded text-slate-500">
+                                                        <FileText className="h-5 w-5"/>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[300px]">{doc.name}</span>
+                                                        <span className="text-xs text-slate-400">{new Date(doc.date).toLocaleDateString()}</span>
+                                                    </div>
+                                                </div>
+                                                <a href={doc.url} target="_blank" className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Baixar">
+                                                    <Download className="h-5 w-5"/>
+                                                </a>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

@@ -1,12 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  devIndicators: false, // Remove widget de desenvolvimento Next.js
+  // A configuração 'eslint' foi removida daqui pois causa erro no build do Next.js 15/16.
   
-  // Ignorar erros durante build (compatibilidade Vercel)
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Ignorar erros de TypeScript durante o build (útil para produção rápida)
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -196,7 +193,7 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },
   
-  // Headers CORS para permitir acesso da plataforma Lasy
+  // Headers CORS para permitir acesso da plataforma
   async headers() {
     return [
       {
