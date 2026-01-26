@@ -9,19 +9,20 @@ import {
   LayoutDashboard, Users, DollarSign,
   BarChart2, PieChart, Briefcase, Folder,
   Users2, Settings, LogOut,
-  ChevronLeft, ChevronRight, BarChart3, Megaphone
+  ChevronLeft, ChevronRight, BarChart3, Megaphone, Building2 // <--- Building2 já importado
 } from 'lucide-react';
 
-// Configuração dos itens do menu (REMOVIDOS: Tarefas, Produtividade, Metas, Alertas)
+// Configuração dos itens do menu
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Clientes', href: '/clients', icon: Users }, // Agora é o HUB CENTRAL
+  { name: 'Visão Geral', href: '/overview', icon: Building2 }, // <--- ADICIONADO AQUI
+  { name: 'Clientes', href: '/clients', icon: Users }, 
   { name: 'CRM', href: '/crm', icon: Megaphone },
   { name: 'Financeiro', href: '/finances', icon: DollarSign },
   { name: 'DRE', href: '/dre', icon: BarChart2 },
   { name: 'Dashboards', href: '/dashboards', icon: PieChart },
   { name: 'Projetos Freelancer', href: '/freelancer-projects', icon: Briefcase },
-  { name: 'Documentos', href: '/documents', icon: Folder }, // Docs gerais
+  { name: 'Documentos', href: '/documents', icon: Folder },
   { name: 'Equipe', href: '/team', icon: Users2 },
   { name: 'Configurações', href: '/settings', icon: Settings },
 ];

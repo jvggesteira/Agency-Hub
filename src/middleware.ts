@@ -2,39 +2,50 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
-  // 1. Prepara a resposta (sem mexer na URL)
+  // --- REGRA DE OURO (A SOLUÇÃO) ---
+  // Se a rota for da API, libera imediatamente.
+  // Isso impede que o middleware tente autenticar rotas de dados e retorne HTML de login.
+  if (request.nextUrl.pathname.startsWith('/api')) {
+    return NextResponse.next();
+  }
+
+  // 1. Prepara a resposta padrão
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
 
-  // 2. Apenas gerencia os cookies da sessão (Essencial para o login não cair)
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
+  try {
+      // 2. Tenta gerenciar cookies (apenas se tiver o pacote instalado)
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() {
+              return request.cookies.getAll();
             },
-          });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+            setAll(cookiesToSet) {
+              cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
+              response = NextResponse.next({
+                request: {
+                  headers: request.headers,
+                },
+              });
+              cookiesToSet.forEach(({ name, value, options }) =>
+                response.cookies.set(name, value, options)
+              );
+            },
+          },
+        }
+      );
 
-  // Atualiza o token se necessário para manter a sessão viva
-  await supabase.auth.getUser();
+      await supabase.auth.getUser();
+  } catch (e) {
+      // Se der erro no Supabase (ex: pacote faltando), apenas segue o jogo
+      // para não derrubar o site.
+  }
 
   return response;
 }
