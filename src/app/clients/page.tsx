@@ -951,29 +951,42 @@ const onSubmit = async (data: TaskFormData) => {
   const moveColumn = (index: number, direction: 'up' | 'down') => { if ((direction === 'up' && index === 0) || (direction === 'down' && index === columns.length - 1)) return; const newCols = [...columns]; const targetIndex = direction === 'up' ? index - 1 : index + 1; [newCols[index], newCols[targetIndex]] = [newCols[targetIndex], newCols[index]]; saveColumnsToDb(newCols); };
 
   const openEditModal = (task: any) => {
+      // Verifica permissão
       if (!can('tasks', 'edit')) {
           toast({ title: "Acesso Negado", description: "Apenas visualização permitida.", variant: "destructive" });
           return;
       }
-      setEditingTask(task); setActiveTab('details');
-      let formattedDate = ''; if (task.dueDate) { if (task.dueDate.includes('T')) formattedDate = task.dueDate.split('T')[0]; else formattedDate = task.dueDate; }
       
+      setEditingTask(task); 
+      setActiveTab('details');
+      
+      // Tratamento de Data
+      let formattedDate = '';
+      if (task.dueDate) { 
+          if (task.dueDate.includes('T')) formattedDate = task.dueDate.split('T')[0]; 
+          else formattedDate = task.dueDate;
+      }
+      
+      // AQUI ESTÁ A CORREÇÃO: O reset precisa preencher TODOS os campos explicitamente
       reset({ 
           title: task.title, 
           description: task.description || '', 
           priority: task.priority, 
-          status: task.status, 
+          status: task.status, // Garante que o status atual venha selecionado
           dueDate: formattedDate, 
-          assignedTo: task.assignee_id || '', 
-          clientId: task.client_id || '', 
-          subProject: task.sub_project || '',
-          // Recorrência
+          assignedTo: task.assignee_id || '', // Destrava o select de Responsável
+          clientId: task.client_id || '',     // Destrava o select de Cliente
+          subProject: task.sub_project || '', // Destrava o select de Frente
+          
+          // Campos de Recorrência
           isRecurring: task.is_recurring || false,
-          recurrenceInterval: task.recurrence_interval || '',
-          recurrenceDayOfWeek: task.recurrence_day_of_week || '',
-          recurrenceCustomDays: task.recurrence_custom_days || ''
+          recurrenceInterval: task.recurrence_interval || 'daily',
+          recurrenceDayOfWeek: task.recurrence_day_of_week ? String(task.recurrence_day_of_week) : '',
+          recurrenceCustomDays: task.recurrence_custom_days ? String(task.recurrence_custom_days) : ''
       });
-      fetchComments(task.id); setIsModalOpen(true);
+      
+      fetchComments(task.id); 
+      setIsModalOpen(true);
   };
 
   const fetchComments = async (taskId: string) => { const { data } = await supabase.from('task_comments').select('*, profiles(full_name)').eq('task_id', taskId).order('created_at'); if (data) setComments(data); };
