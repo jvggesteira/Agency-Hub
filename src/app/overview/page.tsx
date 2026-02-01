@@ -27,20 +27,24 @@ const formatPercent = (val: number) => `${val?.toFixed(2)}%`;
 export default function GeneralOverviewPage() {
   const [data, setData] = useState<GeneralData | null>(null);
   const [loading, setLoading] = useState(true);
-  
   const [timeRange, setTimeRange] = useState("30");
   const [chartGrouping, setChartGrouping] = useState<'day' | 'week' | 'month'>('day');
   
-  // Datas Customizadas
-  const [customStart, setCustomStart] = useState('2026-01-01');
-  const [customEnd, setCustomEnd] = useState('2026-02-28');
+  // Datas Customizadas (Iniciando com o mês atual ou range fixo)
+  const [customStart, setCustomStart] = useState(new Date().toISOString().split('T')[0]); 
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().split('T')[0]);
 
-  // Calcula datas (Mesma lógica do dashboard individual)
+  // Calcula datas
   const getDateRangeParams = (option: string) => {
-    if (option === 'custom') return `start=${customStart}&end=${customEnd}`;
-    const end = new Date('2026-02-28'); // DATA FIXA DE TESTE (Remover em prod)
-    const start = new Date('2026-02-28');
+    if (option === 'custom') {
+        return `start=${customStart}&end=${customEnd}`;
+    }
+
+    const end = new Date(); // DATA ATUAL (Em produção usa-se data atual)
+    const start = new Date();
     start.setDate(end.getDate() - parseInt(option));
+    
+    // Ajuste para não quebrar em produção
     return `start=${start.toISOString().split('T')[0]}&end=${end.toISOString().split('T')[0]}`;
   };
 
@@ -51,28 +55,23 @@ export default function GeneralOverviewPage() {
     setLoading(true);
     const dateQuery = getDateRangeParams(timeRange);
 
-    console.log("Chamando API Overview..."); // Log para Debug
-
     fetch(`/api/analytics/general?${dateQuery}&groupBy=${chartGrouping}`)
       .then(async (res) => {
-        const text = await res.text(); // Pega resposta como texto primeiro
-        console.log("Resposta API:", text); // Mostra o que veio no console do navegador
-
+        const text = await res.text();
         try {
-            const json = JSON.parse(text); // Tenta converter pra JSON
+            const json = JSON.parse(text);
             if (!res.ok) throw new Error(json.error || 'Erro na API');
             setData(json);
         } catch (e) {
             console.error("Erro JSON:", e);
-            throw new Error("Resposta inválida da API: " + text.substring(0, 50));
+            throw new Error("Resposta inválida da API");
         }
       })
       .catch((err) => {
           console.error("Erro Fatal Overview:", err);
-          alert("Erro ao carregar dados: " + err.message); // Mostra o erro na tela pro usuário
       })
       .finally(() => {
-          setLoading(false); // <--- GARANTE QUE O LOADING PARE
+          setLoading(false);
       });
   }, [timeRange, chartGrouping, customStart, customEnd]);
 
@@ -103,14 +102,12 @@ export default function GeneralOverviewPage() {
                             onChange={(e) => setTimeRange(e.target.value)}
                             className="bg-transparent font-medium text-sm focus:outline-none cursor-pointer"
                         >
-                            <option value="7">Últimos 7 dias</option>
-                            <option value="15">Últimos 15 dias</option>
-                            <option value="30">Últimos 30 dias</option>
-                            <option value="90">Últimos 3 Meses</option>
-                            <option value="custom">Personalizado</option>
+                            <option value="7">Semanal (7 dias)</option>
+                            <option value="30">Mensal (30 dias)</option>
+                            <option value="custom">Selecionar Período...</option>
                         </select>
                     </div>
-                    {/* Inputs Customizados */}
+                    {/* Inputs Customizados - Aparecem só se selecionar 'Custom' */}
                     {timeRange === 'custom' && (
                         <div className="flex items-center gap-2 animate-in fade-in">
                             <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2 py-1.5 border rounded text-xs" />
@@ -137,7 +134,7 @@ export default function GeneralOverviewPage() {
                     {/* KPI CARDS (GERAL) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                         <KPICard title="Receita Total" value={formatCurrency(data.report.financial.revenue)} icon={<TrendingUp className="h-4 w-4 text-green-600" />} />
-                        <KPICard title="Investimento Total" value={formatCurrency(data.report.financial.invested)} icon={<Wallet className="h-4 w-4 text-orange-600" />} invertGrowth />
+                        <KPICard title="Investimento Total" value={formatCurrency(data.report.financial.invested)} icon={<Wallet className="h-4 w-4 text-orange-600" />} invertGrowth description="Ads + Fee Agência" />
                         
                         <KPICard 
                             title="Lucro Líquido Global" 

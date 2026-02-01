@@ -5,14 +5,12 @@ import Link from 'next/link';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
 import { 
-  Search, Plus, Mail, Phone, Building, FileText, Folder, Upload, Download, Trash2, Clock, DollarSign, X, Edit, AlertCircle, Loader2, FolderPlus, ChevronLeft, CornerUpLeft,
-  CheckSquare, Calendar, User, Target, Bell, LayoutGrid, List, MessageSquare, Send, Filter, TrendingUp, TrendingDown, Activity, Users, AlertTriangle, Info, Zap, RefreshCw,
-  CheckCircle, Percent, Wallet, PieChart, Settings, ArrowUp, ArrowDown, HelpCircle, Save, CalendarDays,
-  // Ícones adicionados para as novas funções:
-  Palette, Repeat, ChevronUp, ChevronDown, CheckCircle2, History
+  Search, Plus, Folder, Upload, Download, Trash2, Clock, DollarSign, X, Edit, AlertCircle, Loader2, FolderPlus, ChevronLeft,
+  CheckSquare, Calendar, User, Target, Bell, LayoutGrid, List, Filter, TrendingUp, TrendingDown, Activity, Users, AlertTriangle, Info, Zap, RefreshCw,
+  CheckCircle, Wallet, Settings, ArrowUp, ArrowDown, Save,
+  Repeat, History, Coins, FileText, Send
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/hooks/use-toast';
 import { usePermission } from '@/hooks/use-permission';
@@ -29,13 +27,19 @@ import { SortableTaskCard } from '@/components/custom/sortable-task-card';
 import { format, addDays, addWeeks, addMonths, nextDay } from 'date-fns';
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ptBR } from 'date-fns/locale';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+// --- FUNÇÃO AUXILIAR DE FORMATAÇÃO DE MOEDA ---
+const formatCurrency = (val: number, currency: string = 'BRL') => {
+  if (currency === 'N') {
+    return new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2 }).format(val) + ' N';
+  }
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+};
 
 // ==================================================================================
-// --- 1. VIEW CLIENTES ---
+// --- 1. VIEW CLIENTES (COM MOEDA N E DASHBOARD COMPLETO) ---
 // ==================================================================================
 
 const clientSchema = z.object({
@@ -46,6 +50,7 @@ const clientSchema = z.object({
   address: z.string().optional(),
   status: z.enum(['active', 'inactive']),
   feeType: z.enum(['fixed', 'variable', 'hybrid']),
+  currency: z.enum(['BRL', 'N']), 
   value: z.string().optional(),
   commissionPercent: z.string().optional(),
   contractDuration: z.string().min(1, "Duração obrigatória"),
@@ -56,13 +61,18 @@ type ClientFormData = z.infer<typeof clientSchema>;
 const DEFAULT_FOLDERS = ['Contratos', 'Briefing', 'Tráfego Pago', 'Orgânico', 'Geral'];
 
 function ClientsView() {
-  const { can } = usePermission(); // Hook de permissão
+  const { can } = usePermission(); 
   const [clients, setClients] = useState<any[]>([]);
   const [financialStatus, setFinancialStatus] = useState<any>({});
-  const [monthlyStats, setMonthlyStats] = useState({ expected: 0, paid: 0, overdue: 0, open: 0 });
+  
+  // Stats separados por moeda
+  const [monthlyStatsBRL, setMonthlyStatsBRL] = useState({ expected: 0, paid: 0, overdue: 0, open: 0 });
+  const [monthlyStatsN, setMonthlyStatsN] = useState({ expected: 0, paid: 0, overdue: 0, open: 0 });
+
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const [currencyFilter, setCurrencyFilter] = useState<'all' | 'BRL' | 'N'>('all'); 
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isChurnModalOpen, setIsChurnModalOpen] = useState(false);
@@ -79,9 +89,11 @@ function ClientsView() {
   const [customFolders, setCustomFolders] = useState<string[]>([]);
   
   const { register, handleSubmit, reset, setValue, watch, formState: { isSubmitting } } = useForm<ClientFormData>({
-    resolver: zodResolver(clientSchema), defaultValues: { status: 'active', contractDuration: '12', feeType: 'fixed' }
+    resolver: zodResolver(clientSchema), defaultValues: { status: 'active', contractDuration: '12', feeType: 'fixed', currency: 'BRL' }
   });
+  
   const feeType = watch('feeType');
+  const formCurrency = watch('currency'); 
 
   useEffect(() => { fetchClients(); }, []);
 
@@ -94,14 +106,17 @@ function ClientsView() {
     const endMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString();
     
     const { data: transactions } = await supabase.from('transactions')
-        .select('client_id, status, date, id, amount')
+        .select('client_id, status, date, id, amount, currency')
         .eq('type', 'income')
         .gte('date', startMonth)
         .lte('date', endMonth);
         
     const statusMap: any = {};
     const activeClientIds = new Set(clientsData?.filter((c: any) => c.status === 'active').map((c: any) => c.id) || []);
-    let totalExpected = 0, totalPaid = 0, totalOverdue = 0, totalOpen = 0;
+    
+    let expectedBRL = 0, paidBRL = 0, overdueBRL = 0, openBRL = 0;
+    let expectedN = 0, paidN = 0, overdueN = 0, openN = 0;
+
     const todayNormalized = new Date(); todayNormalized.setHours(0,0,0,0);
 
     if (transactions) {
@@ -109,25 +124,41 @@ function ClientsView() {
             if (!statusMap[t.client_id] || t.status === 'paid' || t.status === 'done') {
                 statusMap[t.client_id] = { status: t.status, date: t.date, txId: t.id };
             }
+
             if (activeClientIds.has(t.client_id)) {
                 const amount = Number(t.amount || 0);
-                totalExpected += amount;
-                if (t.status === 'done' || t.status === 'paid') totalPaid += amount;
-                else {
-                    const dueDate = new Date(t.date); dueDate.setHours(0,0,0,0);
-                    if (dueDate.getTime() < todayNormalized.getTime()) totalOverdue += amount;
-                    else totalOpen += amount;
+                const currency = t.currency || 'BRL';
+
+                if (currency === 'BRL') {
+                    expectedBRL += amount;
+                    if (t.status === 'done' || t.status === 'paid') paidBRL += amount;
+                    else {
+                        const dueDate = new Date(t.date); dueDate.setHours(0,0,0,0);
+                        if (dueDate.getTime() < todayNormalized.getTime()) overdueBRL += amount;
+                        else openBRL += amount;
+                    }
+                } else if (currency === 'N') {
+                    expectedN += amount;
+                    if (t.status === 'done' || t.status === 'paid') paidN += amount;
+                    else {
+                        const dueDate = new Date(t.date); dueDate.setHours(0,0,0,0);
+                        if (dueDate.getTime() < todayNormalized.getTime()) overdueN += amount;
+                        else openN += amount;
+                    }
                 }
             }
         });
     }
+
     setFinancialStatus(statusMap);
-    setMonthlyStats({ expected: totalExpected, paid: totalPaid, overdue: totalOverdue, open: totalOpen });
+    setMonthlyStatsBRL({ expected: expectedBRL, paid: paidBRL, overdue: overdueBRL, open: openBRL });
+    setMonthlyStatsN({ expected: expectedN, paid: paidN, overdue: overdueN, open: openN });
     
     if (clientsData) {
         setClients(clientsData.map((c: any) => ({ 
             ...c, 
             value: c.value || c.contract_value || 0,
+            currency: c.currency || 'BRL',
             sub_projects: c.sub_projects || []
         })));
     }
@@ -135,14 +166,13 @@ function ClientsView() {
   };
 
   const handleQuickPay = async (clientId: string, txId: string) => {
-      // Apenas quem edita financeiro ou clientes deveria poder pagar, mas deixarei aberto por enquanto ou vinculado ao financeiro
       if (!confirm("Confirmar que o cliente realizou o pagamento deste mês?")) return;
       const { error } = await supabase.from('transactions').update({ status: 'done' }).eq('id', txId);
       if (error) toast({ title: "Erro", description: "Não foi possível baixar.", variant: "destructive" });
       else { toast({ title: "Pago!", description: "Baixa realizada com sucesso.", className: "bg-green-600 text-white" }); fetchClients(); }
   };
 
-  const generateFinancialRecords = async (clientId: string, value: number, duration: number, startDate: string, clientName: string) => {
+  const generateFinancialRecords = async (clientId: string, value: number, duration: number, startDate: string, clientName: string, currency: 'BRL' | 'N') => {
       if (value <= 0) return;
       const transactions = [];
       const start = new Date(startDate + 'T12:00:00');
@@ -164,6 +194,7 @@ function ClientsView() {
                   category: 'Vendas',
                   classification: 'fixo',
                   payment_method: 'boleto',
+                  currency: currency, 
                   date: date.toISOString(),
                   client_id: clientId,
                   status: 'pending',
@@ -187,19 +218,25 @@ function ClientsView() {
             status: data.status, 
             value: rawValue, contract_value: rawValue, fee_type: data.feeType, commission_percent: commission,
             contract_duration: duration, contract_start_date: data.contractStartDate, notes: data.notes,
-            sub_projects: subProjects
+            sub_projects: subProjects,
+            currency: data.currency
         };
 
         if (editingClient) {
             await supabase.from('clients').update(payload).eq('id', editingClient.id);
             const today = new Date().toISOString();
             await supabase.from('transactions').delete().eq('client_id', editingClient.id).eq('status', 'pending').gte('date', today);
-            if (rawValue > 0 && data.status === 'active') await generateFinancialRecords(editingClient.id, rawValue, duration, data.contractStartDate, displayName);
+            
+            if (rawValue > 0 && data.status === 'active') {
+                await generateFinancialRecords(editingClient.id, rawValue, duration, data.contractStartDate, displayName, data.currency);
+            }
             toast({ title: "Cliente e Financeiro Atualizados" });
         } else {
             const { data: newClient, error } = await supabase.from('clients').insert(payload).select().single();
             if (error) throw error;
-            if (newClient && rawValue > 0) await generateFinancialRecords(newClient.id, rawValue, duration, data.contractStartDate, displayName);
+            if (newClient && rawValue > 0) {
+                await generateFinancialRecords(newClient.id, rawValue, duration, data.contractStartDate, displayName, data.currency);
+            }
             toast({ title: "Cliente criado" });
         }
         setIsModalOpen(false); fetchClients(); reset(); setSubProjects([]);
@@ -207,7 +244,6 @@ function ClientsView() {
   };
 
   const handleEdit = (client: any) => {
-    // TRAVA DE SEGURANÇA NO CLICK
     if (!can('clients', 'edit')) return; 
     
     setEditingClient(client); setActiveTab('dados');
@@ -215,7 +251,8 @@ function ClientsView() {
     setValue('phone', client.phone || ''); setValue('company', client.company || ''); setValue('address', client.address || '');
     setValue('status', client.status); 
     setValue('feeType', client.fee_type || 'fixed');
-    setValue('value', client.value?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+    setValue('currency', client.currency || 'BRL'); 
+    setValue('value', client.value?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })); 
     setValue('commissionPercent', client.commission_percent?.toString());
     setValue('contractDuration', client.contract_duration?.toString() || '12');
     setValue('contractStartDate', client.contract_start_date?.split('T')[0] || new Date().toISOString().split('T')[0]);
@@ -225,7 +262,6 @@ function ClientsView() {
   };
 
   const handleDelete = async (id: string) => {
-    // TRAVA DE SEGURANÇA
     if (!can('clients', 'delete')) return;
 
     if (!confirm('ATENÇÃO: Excluir apagará TODO o histórico financeiro. Prefira "Encerrar Contrato". Deseja excluir?')) return;
@@ -235,7 +271,6 @@ function ClientsView() {
   };
 
   const handleChurn = async () => {
-      // Churn é um tipo de edição
       if (!can('clients', 'edit')) return;
       if (!clientToChurn) return;
       try {
@@ -246,20 +281,31 @@ function ClientsView() {
       } catch (error) { toast({ title: "Erro", variant: "destructive" }); }
   };
 
-  // ... (Outras funções auxiliares mantidas: handleAddSubProject, handleRemoveSubProject, etc.)
   const handleAddSubProject = () => { if (newSubProject.trim() && !subProjects.includes(newSubProject.trim())) { setSubProjects([...subProjects, newSubProject.trim()]); setNewSubProject(''); }};
   const handleRemoveSubProject = (idx: number) => { setSubProjects(subProjects.filter((_, i) => i !== idx)); };
-  const handleCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => { let value = e.target.value.replace(/\D/g, ""); value = (Number(value) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); setValue('value', value); };
+  
+  const handleCurrencyInput = (e: React.ChangeEvent<HTMLInputElement>) => { 
+      let value = e.target.value.replace(/\D/g, ""); 
+      const numValue = Number(value) / 100;
+      if (formCurrency === 'N') {
+          e.target.value = numValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+      } else {
+          e.target.value = numValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); 
+      }
+      setValue('value', e.target.value);
+  };
   
   const stats = useMemo(() => {
       const activeClients = clients.filter(c => c.status === 'active');
       const totalActive = activeClients.length;
-      const values = activeClients.map(c => Number(c.value) || 0);
-      const totalRevenue = values.reduce((a, b) => a + b, 0);
-      const avgTicket = totalActive > 0 ? totalRevenue / totalActive : 0;
-      const maxFee = values.length > 0 ? Math.max(...values) : 0;
-      const minFee = values.length > 0 ? Math.min(...values) : 0;
-      return { totalActive, avgTicket, maxFee, minFee, totalRevenue };
+      
+      const valuesBRL = activeClients.filter(c => c.currency !== 'N').map(c => Number(c.value) || 0);
+      const totalRevenueBRL = valuesBRL.reduce((a, b) => a + b, 0);
+      
+      const valuesN = activeClients.filter(c => c.currency === 'N').map(c => Number(c.value) || 0);
+      const totalRevenueN = valuesN.reduce((a, b) => a + b, 0);
+
+      return { totalActive, totalRevenueBRL, totalRevenueN };
   }, [clients]);
 
   const fetchClientDetails = async (clientId: string, contractUrl?: string) => {
@@ -299,7 +345,6 @@ function ClientsView() {
         toast({ title: "Arquivo enviado!" });
     } catch { toast({ title: "Erro no upload", variant: "destructive" }); } finally { setUploading(false); }
   };
-
   const handleCreateFolder = () => { const name = prompt("Nome da pasta:"); if(name && !DEFAULT_FOLDERS.includes(name) && !customFolders.includes(name)) setCustomFolders([...customFolders, name]); };
   const allFolders = [...DEFAULT_FOLDERS, ...customFolders];
 
@@ -325,7 +370,8 @@ function ClientsView() {
   const filteredClients = clients.filter(c => {
       const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.company && c.company.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesCurrency = currencyFilter === 'all' || (c.currency || 'BRL') === currencyFilter;
+      return matchesSearch && matchesStatus && matchesCurrency;
   });
 
   const getDaysRemaining = (startStr: string, duration: number) => {
@@ -337,22 +383,49 @@ function ClientsView() {
 
   return (
     <div className="space-y-6 animate-in fade-in zoom-in duration-300">
-        {/* DASHBOARD FINANCEIRO E BUSCA - Mantido igual */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm"><p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Users className="h-3 w-3"/> Clientes Ativos</p><p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{stats.totalActive}</p></div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-blue-500 shadow-sm"><p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><DollarSign className="h-3 w-3"/> MRR Contratado</p><p className="text-2xl font-bold text-blue-600 mt-1">{stats.totalRevenue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p></div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-green-500 shadow-sm"><p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Wallet className="h-3 w-3"/> Recebido (Mês)</p><p className="text-2xl font-bold text-green-600 mt-1">{monthlyStats.paid.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p><div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden"><div className="bg-green-500 h-1.5" style={{width: `${monthlyStats.expected > 0 ? (monthlyStats.paid/monthlyStats.expected)*100 : 0}%`}}></div></div></div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-red-500 shadow-sm"><p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><AlertTriangle className="h-3 w-3"/> Inadimplência</p><p className="text-2xl font-bold text-red-600 mt-1">{monthlyStats.overdue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p></div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-amber-500 shadow-sm"><p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Clock className="h-3 w-3"/> A Receber</p><p className="text-2xl font-bold text-amber-600 mt-1">{monthlyStats.open.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p></div>
+            {/* CARD 1: CLIENTES ATIVOS */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Users className="h-3 w-3"/> Ativos</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{stats.totalActive}</p>
+            </div>
+            
+            {/* CARD 2: MRR */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-blue-500 shadow-sm">
+                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><DollarSign className="h-3 w-3"/> MRR Contratado</p>
+                <p className="text-xl font-bold text-blue-600 mt-1">{stats.totalRevenueBRL.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                <p className="text-xs text-blue-400 font-medium">+ {stats.totalRevenueN.toLocaleString('pt-BR', {minimumFractionDigits: 2})} N</p>
+            </div>
+
+            {/* CARD 3: RECEBIDO (MÊS) */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-green-500 shadow-sm">
+                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Wallet className="h-3 w-3"/> Recebido (Mês)</p>
+                <p className="text-xl font-bold text-green-600 mt-1">{monthlyStatsBRL.paid.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                <p className="text-xs text-green-500 font-medium">+ {monthlyStatsN.paid.toLocaleString('pt-BR', {minimumFractionDigits: 2})} N</p>
+            </div>
+            
+            {/* CARD 4: INADIMPLÊNCIA */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-red-500 shadow-sm">
+                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><AlertTriangle className="h-3 w-3"/> Inadimplência</p>
+                <p className="text-xl font-bold text-red-600 mt-1">{monthlyStatsBRL.overdue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                <p className="text-xs text-red-400 font-medium">+ {monthlyStatsN.overdue.toLocaleString('pt-BR', {minimumFractionDigits: 2})} N</p>
+            </div>
+
+            {/* CARD 5: A RECEBER */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-amber-500 shadow-sm">
+                <p className="text-xs text-slate-500 uppercase font-bold flex items-center gap-1"><Clock className="h-3 w-3"/> A Receber</p>
+                <p className="text-xl font-bold text-amber-600 mt-1">{monthlyStatsBRL.open.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                <p className="text-xs text-amber-500 font-medium">+ {monthlyStatsN.open.toLocaleString('pt-BR', {minimumFractionDigits: 2})} N</p>
+            </div>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border dark:border-slate-800 flex justify-between gap-4">
             <div className="relative flex-1 flex gap-2">
                 <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input className="w-full pl-10 pr-4 py-2 border rounded-lg bg-transparent dark:text-white dark:border-slate-700" placeholder="Buscar clientes..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div>
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="h-10 px-3 border rounded-lg bg-white dark:bg-slate-950 dark:text-white dark:border-slate-700 text-sm font-medium"><option value="active">Ativos</option><option value="inactive">Inativos (Churn)</option><option value="all">Todos</option></select>
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="h-10 px-3 border rounded-lg bg-white dark:bg-slate-900 dark:text-white dark:border-slate-700 text-sm font-medium"><option value="active">Ativos</option><option value="inactive">Inativos</option><option value="all">Todos</option></select>
+                <select value={currencyFilter} onChange={(e) => setCurrencyFilter(e.target.value as any)} className="h-10 px-3 border rounded-lg bg-white dark:bg-slate-900 dark:text-white dark:border-slate-700 text-sm font-medium"><option value="all">Todas Moedas</option><option value="BRL">R$ (Reais)</option><option value="N">Moeda N</option></select>
             </div>
             
-            {/* BOTÃO NOVO CLIENTE (Escondido se não tiver permissão de create) */}
             {can('clients', 'create') && (
                 <Button onClick={() => { setEditingClient(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900">
                     <Plus className="mr-2 h-4 w-4"/> Novo Cliente
@@ -363,145 +436,125 @@ function ClientsView() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredClients.map(client => {
                 const daysRemaining = getDaysRemaining(client.contract_start_date, client.contract_duration);
+                const isN = client.currency === 'N';
+                
                 return (
                 <div key={client.id} className={`p-5 rounded-xl border hover:shadow-md transition-shadow ${client.status === 'inactive' ? 'bg-slate-50 dark:bg-slate-900/50 opacity-70 border-slate-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'}`}>
-                    {/* ... (Cabeçalho do Card mantido igual) ... */}
                     <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-600 dark:text-slate-300">{(client.company || client.name).charAt(0).toUpperCase()}</div>
-                            <div>{client.company ? (<><h3 className="font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{client.company}</h3><p className="text-xs text-slate-500">{client.name}</p></>) : (<><h3 className="font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{client.name}</h3><p className="text-xs text-slate-500">PF</p></>)}</div>
+                            <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${isN ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                                {(client.company || client.name).charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                {client.company ? (<><h3 className="font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{client.company}</h3><p className="text-xs text-slate-500">{client.name}</p></>) : (<><h3 className="font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{client.name}</h3><p className="text-xs text-slate-500">PF</p></>)}
+                            </div>
                         </div>
-                        <div>{renderPaymentStatus(client.id)}</div>
+                        <div className="flex flex-col items-end gap-1">
+                            {renderPaymentStatus(client.id)}
+                            {isN && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 rounded-full font-bold">Moeda N</span>}
+                        </div>
                     </div>
                     
                     <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 mb-4">
-                        <div className="flex items-center gap-2"><DollarSign className="h-4 w-4 text-green-600"/> <div className="flex flex-col"><span className="font-semibold">{client.value > 0 ? client.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : 'Variável'}</span>{client.commission_percent > 0 && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 rounded-full w-fit font-bold mt-0.5">+ {client.commission_percent}% Ads</span>}</div></div>
+                        <div className="flex items-center gap-2">
+                            {isN ? <Coins className="h-4 w-4 text-purple-600"/> : <DollarSign className="h-4 w-4 text-green-600"/>}
+                            <div className="flex flex-col">
+                                <span className="font-semibold">{client.value > 0 ? formatCurrency(client.value, client.currency) : 'Variável'}</span>
+                                {client.commission_percent > 0 && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 rounded-full w-fit font-bold mt-0.5">+ {client.commission_percent}% Ads</span>}
+                            </div>
+                        </div>
                         <div className="flex items-center gap-2 text-xs"><Calendar className="h-4 w-4 text-blue-500"/><span>{client.contract_duration} meses</span>{daysRemaining !== null && (<span className={`ml-auto font-bold ${daysRemaining < 30 ? 'text-red-500' : 'text-slate-500'}`}>{daysRemaining > 0 ? `${daysRemaining} dias rest.` : 'Finalizado'}</span>)}</div>
                         {client.sub_projects && client.sub_projects.length > 0 && (<div className="flex flex-wrap gap-1 mt-2">{client.sub_projects.map((sp: string, i: number) => (<span key={i} className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 border dark:border-slate-700">{sp}</span>))}</div>)}
                     </div>
                     
                     <div className="flex flex-col gap-2 pt-2 border-t dark:border-slate-800">
-                        {/* NOVO BOTÃO DE ANALYTICS */}
-                    <Link href={`/clients/${client.id}/analytics`} className="w-full">
-                        <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold">
-                             Performance 🚀
-                        </Button>
-                    </Link>
-
-                    {/* MANTÉM OS BOTÕES ANTIGOS ABAIXO EM UMA LINHA */}
-                    <div className="flex gap-2 w-full">
-                        {/* Botão Gerenciar (Editar) */}
-                        {can('clients', 'edit') ? (
-                            <Button variant="outline" className="flex-1" onClick={() => handleEdit(client)}>Gerenciar</Button>
-                        ) : (
-                            <Button variant="outline" className="flex-1 opacity-50 cursor-not-allowed">Visualizar</Button>
-                        )}
-
-                        {/* Botão Churn (Editar status) */}
-                        {can('clients', 'edit') && (
-                            client.status === 'active' ? 
-                            <Button variant="ghost" size="icon" onClick={() => { setClientToChurn(client); setIsChurnModalOpen(true); }} title="Encerrar Contrato"><Users className="h-4 w-4 text-amber-500"/></Button> :
-                            <Button variant="ghost" size="icon" disabled><Users className="h-4 w-4 text-slate-300"/></Button>
-                        )}
-
-                        {/* Botão Excluir (Delete) */}
-                        {can('clients', 'delete') && (
-                            <Button variant="ghost" size="icon" onClick={() => handleDelete(client.id)} title="Excluir Histórico"><Trash2 className="h-4 w-4 text-red-400"/></Button>
-                        )}
+                        <Link href={`/clients/${client.id}/analytics`} className="w-full">
+                            <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold">Performance 🚀</Button>
+                        </Link>
+                        <div className="flex gap-2 w-full">
+                            {can('clients', 'edit') ? (
+                                <Button variant="outline" className="flex-1" onClick={() => handleEdit(client)}>Gerenciar</Button>
+                            ) : (
+                                <Button variant="outline" className="flex-1 opacity-50 cursor-not-allowed">Visualizar</Button>
+                            )}
+                            {can('clients', 'edit') && (
+                                client.status === 'active' ? 
+                                <Button variant="ghost" size="icon" onClick={() => { setClientToChurn(client); setIsChurnModalOpen(true); }} title="Encerrar Contrato"><Users className="h-4 w-4 text-amber-500"/></Button> :
+                                <Button variant="ghost" size="icon" disabled><Users className="h-4 w-4 text-slate-300"/></Button>
+                            )}
+                            {can('clients', 'delete') && (
+                                <Button variant="ghost" size="icon" onClick={() => handleDelete(client.id)} title="Excluir Histórico"><Trash2 className="h-4 w-4 text-red-400"/></Button>
+                            )}
+                        </div>
                     </div>
-                </div>
                 </div>
                 )})}
         </div>
 
-        {/* MODAL CLIENTE e CHURN (Mantidos iguais, pois o controle é no botão de abrir) */}
+        {/* MODAL NOVO CLIENTE */}
         {isModalOpen && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-4xl w-full h-[85vh] flex flex-col border dark:border-slate-800 shadow-2xl">
-                    
-                    {/* CABEÇALHO DO MODAL */}
                     <div className="flex flex-col bg-slate-50 dark:bg-slate-950 rounded-t-xl border-b dark:border-slate-800">
                         <div className="p-6 flex justify-between items-center">
-                            <div>
-                                <h2 className="text-xl font-bold dark:text-white">
-                                    {editingClient ? editingClient.name : 'Novo Cliente'}
-                                </h2>
-                                {editingClient && <p className="text-xs text-slate-500">Gerencie dados, contratos e histórico.</p>}
-                            </div>
+                            <div><h2 className="text-xl font-bold dark:text-white">{editingClient ? editingClient.name : 'Novo Cliente'}</h2>{editingClient && <p className="text-xs text-slate-500">Gerencie dados, contratos e histórico.</p>}</div>
                             <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors"><X className="h-5 w-5"/></button>
                         </div>
-
-                        {/* --- AQUI ESTAVAM FALTANDO AS ABAS --- */}
                         {editingClient && (
                             <div className="flex px-6 gap-6 text-sm font-medium text-slate-500">
-                                <button 
-                                    onClick={() => setActiveTab('dados')} 
-                                    className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'dados' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}
-                                >
-                                    <User className="h-4 w-4"/> Dados Cadastrais
-                                </button>
-                                <button 
-                                    onClick={() => setActiveTab('historico')} 
-                                    className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'historico' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}
-                                >
-                                    <History className="h-4 w-4"/> Histórico & CRM
-                                </button>
-                                <button 
-                                    onClick={() => setActiveTab('docs')} 
-                                    className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'docs' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}
-                                >
-                                    <FileText className="h-4 w-4"/> Documentos
-                                </button>
+                                <button onClick={() => setActiveTab('dados')} className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'dados' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}><User className="h-4 w-4"/> Dados Cadastrais</button>
+                                <button onClick={() => setActiveTab('historico')} className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'historico' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}><History className="h-4 w-4"/> Histórico & CRM</button>
+                                <button onClick={() => setActiveTab('docs')} className={`pb-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'docs' ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white' : 'border-transparent hover:text-slate-700'}`}><FileText className="h-4 w-4"/> Documentos</button>
                             </div>
                         )}
                     </div>
 
-                    {/* CONTEÚDO DO MODAL */}
                     <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-900">
-                        
-                        {/* ABA 1: DADOS (FORMULÁRIO) */}
                         {(!editingClient || activeTab === 'dados') && (
                             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Empresa / Nome Fantasia</label><Input {...register('company')} className="dark:bg-slate-950"/></div>
                                     <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Email Principal</label><Input {...register('email')} className="dark:bg-slate-950"/></div>
                                 </div>
-                                
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Responsável</label><Input {...register('name')} className="dark:bg-slate-950"/></div>
                                     <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Telefone / WhatsApp</label><Input {...register('phone')} className="dark:bg-slate-950"/></div>
                                 </div>
-
-                                {/* CAMPO ENDEREÇO RESTAURADO */}
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Endereço Completo</label>
-                                    <Input {...register('address')} placeholder="Rua, Número, Bairro, Cidade - UF" className="dark:bg-slate-950"/>
-                                </div>
-
-                                {/* FRENTES DE TRABALHO */}
+                                <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Endereço Completo</label><Input {...register('address')} placeholder="Rua, Número, Bairro, Cidade - UF" className="dark:bg-slate-950"/></div>
+                                
                                 <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/30">
                                    <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-blue-800 dark:text-blue-300"><Folder className="h-4 w-4"/> Frentes de Trabalho / Sub-Clientes</h3>
                                     <div className="flex gap-2 mb-3">
                                         <Input value={newSubProject} onChange={e => setNewSubProject(e.target.value)} placeholder="Ex: Só Multas B2B ou Cliente X" className="dark:bg-slate-950 h-9 bg-white"/>
                                         <Button type="button" onClick={handleAddSubProject} size="sm" className="bg-blue-600 text-white h-9 hover:bg-blue-700">Adicionar</Button>
                                     </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {subProjects.map((sp, idx) => (
-                                            <span key={idx} className="bg-white dark:bg-slate-950 border px-2 py-1 rounded text-sm flex items-center gap-2 text-slate-700 dark:text-slate-300 shadow-sm">{sp}<button type="button" onClick={() => handleRemoveSubProject(idx)} className="text-red-500 hover:text-red-700"><X className="h-3 w-3"/></button></span>
-                                        ))}
-                                    </div>
+                                    <div className="flex flex-wrap gap-2">{subProjects.map((sp, idx) => (<span key={idx} className="bg-white dark:bg-slate-950 border px-2 py-1 rounded text-sm flex items-center gap-2 text-slate-700 dark:text-slate-300 shadow-sm">{sp}<button type="button" onClick={() => handleRemoveSubProject(idx)} className="text-red-500 hover:text-red-700"><X className="h-3 w-3"/></button></span>))}</div>
                                 </div>
 
-                                {/* CONFIGURAÇÃO FINANCEIRA */}
                                 <div className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
                                     <h3 className="text-sm font-bold mb-4 flex items-center gap-2 text-slate-700 dark:text-white"><DollarSign className="h-4 w-4"/> Configuração de Cobrança (Contrato)</h3>
+                                    
+                                    {/* SELETOR DE MOEDA NO FORMULÁRIO */}
+                                    <div className="flex items-center gap-4 mb-4 bg-white dark:bg-slate-900 p-2 rounded border">
+                                        <label className="text-xs font-bold text-slate-500 uppercase mr-2">Moeda do Contrato:</label>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => setValue('currency', 'BRL')} className={`px-3 py-1 rounded text-xs font-bold border ${formCurrency === 'BRL' ? 'bg-green-100 text-green-700 border-green-300' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>R$ (Reais)</button>
+                                            <button type="button" onClick={() => setValue('currency', 'N')} className={`px-3 py-1 rounded text-xs font-bold border ${formCurrency === 'N' ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>Moeda N</button>
+                                        </div>
+                                    </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                         <div><label className="text-[10px] uppercase font-bold text-slate-500">Modelo</label><select {...register('feeType')} className="w-full h-10 rounded-md border bg-white px-3 text-sm dark:border-slate-700 dark:text-white dark:bg-slate-900"><option value="fixed">Valor Fixo (Fee)</option><option value="hybrid">Híbrido (Fixo + %)</option><option value="variable">Variável (% Ads)</option></select></div>
                                         <div><label className="text-[10px] uppercase font-bold text-slate-500">Duração (Meses)</label><Input {...register('contractDuration')} type="number" className="dark:bg-slate-900 bg-white"/></div>
                                         <div><label className="text-[10px] uppercase font-bold text-slate-500">Início do Contrato</label><Input {...register('contractStartDate')} type="date" className="dark:bg-slate-900 bg-white"/></div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {(feeType === 'fixed' || feeType === 'hybrid') && (<div><label className="text-[10px] uppercase font-bold text-slate-500">Valor Mensal (R$)</label><Input {...register('value')} onChange={handleCurrencyInput} className="dark:bg-slate-900 bg-white font-bold text-green-700" placeholder="R$ 0,00"/></div>)}
+                                        {(feeType === 'fixed' || feeType === 'hybrid') && (
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-slate-500">Valor Mensal ({formCurrency})</label>
+                                                <Input {...register('value')} onChange={handleCurrencyInput} className={`dark:bg-slate-900 bg-white font-bold ${formCurrency === 'N' ? 'text-purple-600' : 'text-green-700'}`} placeholder={formCurrency === 'N' ? "0,00" : "R$ 0,00"}/>
+                                            </div>
+                                        )}
                                         {(feeType === 'hybrid' || feeType === 'variable') && (<div><label className="text-[10px] uppercase font-bold text-slate-500">Comissão de Ads (%)</label><Input {...register('commissionPercent')} className="dark:bg-slate-900 bg-white font-bold text-purple-600" placeholder="Ex: 10"/></div>)}
                                     </div>
                                 </div>
@@ -515,106 +568,9 @@ function ClientsView() {
                                 </div>
                             </form>
                         )}
-
-                        {/* ABA 2: HISTÓRICO (AGORA MOSTRA CRM) */}
-                        {editingClient && activeTab === 'historico' && ( 
-                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                                <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2"><History className="h-5 w-5"/> Linha do Tempo</h3>
-                                {logs.length === 0 ? (
-                                    <div className="text-center py-10 text-slate-400 bg-slate-50 rounded-lg border border-dashed">Nenhum histórico registrado ainda.</div>
-                                ) : (
-                                    <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 pb-4">
-                                        {logs.map((log, idx) => (
-                                            <div key={log.id || idx} className="relative pl-8">
-                                                {/* Bolinha da Linha do Tempo */}
-                                                <div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-900 ${log.content?.includes('[CRM]') ? 'bg-blue-500' : 'bg-slate-400'}`}></div>
-                                                
-                                                <div className="flex flex-col gap-1">
-                                                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                                                        {new Date(log.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                    </span>
-                                                    
-                                                    {/* Card do Histórico */}
-                                                    <div className={`p-4 rounded-lg border text-sm ${log.content?.includes('[CRM]') ? 'bg-blue-50 border-blue-100 text-slate-800 dark:bg-blue-900/20 dark:border-blue-800 dark:text-slate-200' : 'bg-white border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}>
-                                                        {log.content?.includes('[CRM]') && (
-                                                            <span className="inline-block bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded mb-2 font-bold uppercase">Origem: CRM</span>
-                                                        )}
-                                                        <div className="whitespace-pre-wrap leading-relaxed">
-                                                            {log.content?.replace('[CRM]', '').trim()}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div> 
-                        )}
-
-                        {/* ABA 3: DOCUMENTOS (RESTAURADA) */}
-                        {editingClient && activeTab === 'docs' && (
-                            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                                <div className="flex justify-between items-center mb-6 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border dark:border-slate-700">
-                                    <div className="flex items-center gap-2">
-                                        {currentFolder && <button onClick={() => setCurrentFolder(null)} className="hover:bg-slate-200 p-1 rounded"><ChevronLeft/></button>} 
-                                        <div className="flex flex-col">
-                                            <span className="text-xs text-slate-500 uppercase font-bold">Pasta Atual</span>
-                                            <span className="font-bold text-lg flex items-center gap-2 text-slate-800 dark:text-white">
-                                                <Folder className="h-5 w-5 text-blue-500"/> {currentFolder || 'Raiz (Todas as Pastas)'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        {!currentFolder && <Button variant="outline" size="sm" onClick={handleCreateFolder} className="bg-white dark:bg-slate-900"><FolderPlus className="h-4 w-4 mr-2"/> Nova Pasta</Button>}
-                                        {currentFolder && (
-                                            <div>
-                                                <input type="file" id="up" className="hidden" onChange={handleFileUpload} disabled={uploading}/>
-                                                <label htmlFor="up" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium cursor-pointer flex items-center gap-2 shadow-sm transition-all">
-                                                    {uploading ? <Loader2 className="animate-spin h-4 w-4"/> : <Upload className="h-4 w-4"/>} 
-                                                    {uploading ? 'Enviando...' : 'Enviar Arquivo'}
-                                                </label>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {!currentFolder ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        {allFolders.map(f => (
-                                            <div key={f} onClick={() => setCurrentFolder(f)} className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center group">
-                                                <div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
-                                                    <Folder className="h-8 w-8 text-blue-500"/> 
-                                                </div>
-                                                <span className="font-bold text-slate-700 dark:text-slate-200">{f}</span>
-                                                <span className="text-xs text-slate-400 mt-1">{docs.filter(d => d.folder === f).length} arquivos</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {docs.filter(d => d.folder === currentFolder).length === 0 && (
-                                            <div className="text-center py-10 text-slate-400">Pasta vazia. Envie o primeiro arquivo.</div>
-                                        )}
-                                        {docs.filter(d => d.folder === currentFolder).map((doc, i) => (
-                                            <div key={i} className="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:shadow-sm transition-shadow group">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="p-2 bg-slate-100 dark:bg-slate-900 rounded text-slate-500">
-                                                        <FileText className="h-5 w-5"/>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[300px]">{doc.name}</span>
-                                                        <span className="text-xs text-slate-400">{new Date(doc.date).toLocaleDateString()}</span>
-                                                    </div>
-                                                </div>
-                                                <a href={doc.url} target="_blank" className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Baixar">
-                                                    <Download className="h-5 w-5"/>
-                                                </a>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        {/* Outras abas (Histórico/CRM e Docs) */}
+                        {editingClient && activeTab === 'historico' && ( <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300"><h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2"><History className="h-5 w-5"/> Linha do Tempo</h3>{logs.length === 0 ? (<div className="text-center py-10 text-slate-400 bg-slate-50 rounded-lg border border-dashed">Nenhum histórico registrado ainda.</div>) : (<div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 pb-4">{logs.map((log, idx) => (<div key={log.id || idx} className="relative pl-8"><div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-900 ${log.content?.includes('[CRM]') ? 'bg-blue-500' : 'bg-slate-400'}`}></div><div className="flex flex-col gap-1"><span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{new Date(log.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span><div className={`p-4 rounded-lg border text-sm ${log.content?.includes('[CRM]') ? 'bg-blue-50 border-blue-100 text-slate-800 dark:bg-blue-900/20 dark:border-blue-800 dark:text-slate-200' : 'bg-white border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}>{log.content?.includes('[CRM]') && (<span className="inline-block bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded mb-2 font-bold uppercase">Origem: CRM</span>)}<div className="whitespace-pre-wrap leading-relaxed">{log.content?.replace('[CRM]', '').trim()}</div></div></div></div>))}</div>)}</div> )}
+                        {editingClient && activeTab === 'docs' && ( <div className="animate-in fade-in slide-in-from-right-4 duration-300"><div className="flex justify-between items-center mb-6 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border dark:border-slate-700"><div className="flex items-center gap-2">{currentFolder && <button onClick={() => setCurrentFolder(null)} className="hover:bg-slate-200 p-1 rounded"><ChevronLeft/></button>} <div className="flex flex-col"><span className="text-xs text-slate-500 uppercase font-bold">Pasta Atual</span><span className="font-bold text-lg flex items-center gap-2 text-slate-800 dark:text-white"><Folder className="h-5 w-5 text-blue-500"/> {currentFolder || 'Raiz (Todas as Pastas)'}</span></div></div><div className="flex gap-2">{!currentFolder && <Button variant="outline" size="sm" onClick={handleCreateFolder} className="bg-white dark:bg-slate-900"><FolderPlus className="h-4 w-4 mr-2"/> Nova Pasta</Button>}{currentFolder && (<div><input type="file" id="up" className="hidden" onChange={handleFileUpload} disabled={uploading}/><label htmlFor="up" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium cursor-pointer flex items-center gap-2 shadow-sm transition-all">{uploading ? <Loader2 className="animate-spin h-4 w-4"/> : <Upload className="h-4 w-4"/>} {uploading ? 'Enviando...' : 'Enviar Arquivo'}</label></div>)}</div></div>{!currentFolder ? (<div className="grid grid-cols-2 md:grid-cols-4 gap-4">{allFolders.map(f => (<div key={f} onClick={() => setCurrentFolder(f)} className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center group"><div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform"><Folder className="h-8 w-8 text-blue-500"/> </div><span className="font-bold text-slate-700 dark:text-slate-200">{f}</span><span className="text-xs text-slate-400 mt-1">{docs.filter(d => d.folder === f).length} arquivos</span></div>))}</div>) : (<div className="space-y-3">{docs.filter(d => d.folder === currentFolder).length === 0 && (<div className="text-center py-10 text-slate-400">Pasta vazia. Envie o primeiro arquivo.</div>)}{docs.filter(d => d.folder === currentFolder).map((doc, i) => (<div key={i} className="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:shadow-sm transition-shadow group"><div className="flex items-center gap-3"><div className="p-2 bg-slate-100 dark:bg-slate-900 rounded text-slate-500"><FileText className="h-5 w-5"/></div><div className="flex flex-col"><span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[300px]">{doc.name}</span><span className="text-xs text-slate-400">{new Date(doc.date).toLocaleDateString()}</span></div></div><a href={doc.url} target="_blank" className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Baixar"><Download className="h-5 w-5"/></a></div>))}</div>)}</div> )}
                     </div>
                 </div>
             </div>
@@ -642,10 +598,9 @@ function ClientsView() {
 }
 
 // ==================================================================================
-// --- 2. VIEW TAREFAS (COM COLUNAS DINÂMICAS E PRAZOS) ---
+// --- 2. VIEW TAREFAS ---
 // ==================================================================================
 
-// --- ATUALIZAÇÃO DO SCHEMA (Substitua o const taskSchema existente) ---
 const taskSchema = z.object({
   title: z.string().min(1, 'Título é obrigatório'),
   description: z.string().optional(),
@@ -655,7 +610,6 @@ const taskSchema = z.object({
   assignedTo: z.string().optional(),
   clientId: z.string().optional(),
   subProject: z.string().optional(),
-  // Novos campos de recorrência
   isRecurring: z.boolean().optional(),
   recurrenceInterval: z.enum(['daily', 'weekly', 'biweekly', 'monthly', 'custom']).optional(),
   recurrenceDayOfWeek: z.string().optional(),
@@ -663,7 +617,6 @@ const taskSchema = z.object({
 });
 type TaskFormData = z.infer<typeof taskSchema>;
 
-// Cores para as Colunas
 const COLUMN_COLORS = [
   { name: 'Cinza', value: 'bg-slate-400' },
   { name: 'Azul', value: 'bg-blue-500' },
@@ -682,7 +635,6 @@ const DEFAULT_COLUMNS = [
   { id: 'cancelada', title: 'Cancelada', color: 'bg-red-500', description: 'Tarefas que não serão mais realizadas.' },
 ];
 
-// --- FUNÇÃO TASKSVIEW ATUALIZADA ---
 function TasksView() {
   const { user } = useAuth();
   const { can } = usePermission();
@@ -716,8 +668,6 @@ function TasksView() {
   
   const { register, handleSubmit, reset, watch, setValue } = useForm<TaskFormData>({ resolver: zodResolver(taskSchema) });
   const selectedClientId = watch('clientId');
-  
-  // Watchers para recorrência
   const isRecurring = watch('isRecurring');
   const recurrenceInterval = watch('recurrenceInterval');
   
@@ -738,7 +688,6 @@ function TasksView() {
       catch (err) { toast({ title: "Erro ao salvar", variant: "destructive" }); }
   };
 
-  // Função para atualizar cor da coluna
   const updateColumnColor = (colId: string, newColor: string) => {
       const newCols = columns.map(c => c.id === colId ? { ...c, color: newColor } : c);
       saveColumnsToDb(newCols);
@@ -786,10 +735,8 @@ function TasksView() {
   const tasksByStatus = filteredTasks.reduce((acc, t) => { acc[t.status] = acc[t.status] || []; acc[t.status].push(t); return acc; }, {} as any);
   const stats = { total: filteredTasks.length, overdue: tasks.filter(t => getTaskDeadlineStatus(t) === 'overdue').length };
 
-  // --- LÓGICA DE CÁLCULO DE DATA FUTURA ---
   const calculateNextDate = (baseDate: string | Date, interval: string, dayOfWeek?: string, customDays?: string) => {
       const start = baseDate ? new Date(baseDate) : new Date();
-      // Se a data base for passado, usa hoje
       const effectiveStart = start < new Date() ? new Date() : start;
       
       switch(interval) {
@@ -804,8 +751,7 @@ function TasksView() {
       }
   };
 
-const onSubmit = async (data: TaskFormData) => {
-    // 1. Verificações de Permissão
+  const onSubmit = async (data: TaskFormData) => {
     if (editingTask && !can('tasks', 'edit')) { 
         toast({ title: "Acesso Negado", description: "Sem permissão para editar.", variant: "destructive" }); 
         return; 
@@ -816,27 +762,20 @@ const onSubmit = async (data: TaskFormData) => {
     }
 
     const finalDate = data.dueDate ? `${data.dueDate}T12:00:00` : null;
-    
-    // 2. Tratamento ROBUSTO dos dados de Recorrência (AQUI ESTÁ A CORREÇÃO)
     let recInterval = null;
     let recDay = null;
     let recCustom = null;
 
     if (data.isRecurring) {
         recInterval = data.recurrenceInterval;
-        
-        // Converte "0" (Domingo) ou "5" (Sexta) para número. Se for vazio, vira null.
         if (data.recurrenceDayOfWeek && data.recurrenceDayOfWeek !== "") {
             recDay = Number(data.recurrenceDayOfWeek);
         }
-
-        // Converte "10" (dias) para número. Se for vazio, vira null.
         if (data.recurrenceCustomDays && data.recurrenceCustomDays !== "") {
             recCustom = Number(data.recurrenceCustomDays);
         }
     }
 
-    // 3. Montagem do Payload
     const payload: any = {
         title: data.title, 
         description: data.description, 
@@ -846,8 +785,6 @@ const onSubmit = async (data: TaskFormData) => {
         client_id: data.clientId || null, 
         assignee_id: data.assignedTo || null,
         sub_project: data.subProject || null,
-        
-        // Campos de recorrência sanitizados
         is_recurring: data.isRecurring || false,
         recurrence_interval: recInterval,
         recurrence_day_of_week: recDay,
@@ -856,7 +793,6 @@ const onSubmit = async (data: TaskFormData) => {
     
     let error = null;
 
-    // 4. Envio para o Banco
     if (editingTask) {
         const { error: err } = await supabase.from('tasks').update(payload).eq('id', editingTask.id);
         error = err;
@@ -865,14 +801,9 @@ const onSubmit = async (data: TaskFormData) => {
         error = err;
     }
     
-    // 5. Tratamento de Erros
     if (error) {
         console.error("Erro Supabase:", error);
-        if (error.message?.includes('invalid input syntax')) {
-             toast({ title: "Erro de Formato", description: "Verifique os campos de dias ou intervalo.", variant: "destructive" });
-        } else {
-             toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
-        }
+        toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
     } else {
         setIsModalOpen(false); 
         await fetchData(); 
@@ -904,12 +835,9 @@ const onSubmit = async (data: TaskFormData) => {
     if (active.data.current?.sortable.containerId === newStatus) return;
 
     const task = tasks.find(t => t.id === taskId);
-    
-    // Atualização otimista
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
     await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
 
-    // --- LÓGICA DE RECORRÊNCIA AO CONCLUIR ---
     if (newStatus === 'concluida' && task.is_recurring) {
         const nextDate = calculateNextDate(
             task.due_date, 
@@ -918,29 +846,26 @@ const onSubmit = async (data: TaskFormData) => {
             task.recurrence_custom_days
         );
 
-        // Cria nova tarefa
         const newTaskPayload = {
             ...task,
-            id: undefined, // Remove ID para criar novo
+            id: undefined, 
             created_at: undefined,
-            status: 'pendente', // Volta para o início
+            status: 'pendente', 
             due_date: nextDate.toISOString(),
-            // Mantém as configurações de recorrência para a próxima também ser recorrente
             is_recurring: true
         };
         
-        // Remove campos extras do objeto task que não vão para o banco (joins)
         delete newTaskPayload.client;
         delete newTaskPayload.assignee;
         delete newTaskPayload.client_name;
         delete newTaskPayload.assignee_name;
-        delete newTaskPayload.dueDate; // Usamos due_date no banco
+        delete newTaskPayload.dueDate;
 
         const { data: createdTask, error } = await supabase.from('tasks').insert(newTaskPayload).select().single();
         
         if (!error && createdTask) {
             toast({ title: "Tarefa recorrente gerada", description: `Agendada para ${format(nextDate, 'dd/MM/yyyy')}`, className: "bg-blue-600 text-white" });
-            fetchData(); // Recarrega para trazer a nova tarefa
+            fetchData(); 
         }
     }
   };
@@ -951,40 +876,31 @@ const onSubmit = async (data: TaskFormData) => {
   const moveColumn = (index: number, direction: 'up' | 'down') => { if ((direction === 'up' && index === 0) || (direction === 'down' && index === columns.length - 1)) return; const newCols = [...columns]; const targetIndex = direction === 'up' ? index - 1 : index + 1; [newCols[index], newCols[targetIndex]] = [newCols[targetIndex], newCols[index]]; saveColumnsToDb(newCols); };
 
   const openEditModal = (task: any) => {
-      // Verifica permissão
       if (!can('tasks', 'edit')) {
           toast({ title: "Acesso Negado", description: "Apenas visualização permitida.", variant: "destructive" });
           return;
       }
-      
       setEditingTask(task); 
       setActiveTab('details');
-      
-      // Tratamento de Data
       let formattedDate = '';
       if (task.dueDate) { 
           if (task.dueDate.includes('T')) formattedDate = task.dueDate.split('T')[0]; 
           else formattedDate = task.dueDate;
       }
-      
-      // AQUI ESTÁ A CORREÇÃO: O reset precisa preencher TODOS os campos explicitamente
       reset({ 
           title: task.title, 
           description: task.description || '', 
           priority: task.priority, 
-          status: task.status, // Garante que o status atual venha selecionado
+          status: task.status, 
           dueDate: formattedDate, 
-          assignedTo: task.assignee_id || '', // Destrava o select de Responsável
-          clientId: task.client_id || '',     // Destrava o select de Cliente
-          subProject: task.sub_project || '', // Destrava o select de Frente
-          
-          // Campos de Recorrência
+          assignedTo: task.assignee_id || '', 
+          clientId: task.client_id || '',     
+          subProject: task.sub_project || '', 
           isRecurring: task.is_recurring || false,
           recurrenceInterval: task.recurrence_interval || 'daily',
           recurrenceDayOfWeek: task.recurrence_day_of_week ? String(task.recurrence_day_of_week) : '',
           recurrenceCustomDays: task.recurrence_custom_days ? String(task.recurrence_custom_days) : ''
       });
-      
       fetchComments(task.id); 
       setIsModalOpen(true);
   };
@@ -1021,10 +937,7 @@ const onSubmit = async (data: TaskFormData) => {
             <DndContext collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
                 <div className="flex gap-4 overflow-x-auto min-h-[500px] pb-4">
                     {columns.map(col => (
-                        // CORREÇÃO ERRO 3: Aplicamos a borda colorida AQUI, na div pai, não no KanbanColumn
                         <div key={col.id} className={`min-w-[280px] rounded-xl border-t-4 ${col.color ? col.color.replace('bg-', 'border-') : 'border-slate-400'}`}>
-                            
-                            {/* CABEÇALHO COM SELETOR DE COR */}
                             <div className="flex items-center justify-between mb-2 px-1 pt-2">
                                 <div className="flex items-center gap-2">
                                     <h3 className="font-semibold text-slate-700 dark:text-slate-300 text-sm">{col.title}</h3>
@@ -1048,8 +961,6 @@ const onSubmit = async (data: TaskFormData) => {
                                     </PopoverContent>
                                 </Popover>
                             </div>
-                            
-                            {/* CORREÇÃO ERRO 3: Removemos className daqui */}
                             <KanbanColumn 
                                 id={col.id} 
                                 title="" 
@@ -1058,8 +969,6 @@ const onSubmit = async (data: TaskFormData) => {
                                 tasks={tasksByStatus[col.id] || []}
                             >
                                 {(tasksByStatus[col.id] || []).map((task: any) => (
-                                    // CORREÇÃO ERRO 4: Removemos os children (o ícone Repeat dentro do card)
-                                    // O componente SortableTaskCard é self-closing agora para evitar o erro de tipagem.
                                     <SortableTaskCard 
                                         key={task.id} 
                                         task={task} 
@@ -1116,7 +1025,6 @@ const onSubmit = async (data: TaskFormData) => {
                                 <div className="grid grid-cols-2 gap-4"><div><label className="text-sm">Responsável</label><select {...register('assignedTo')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="">Selecione...</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></div><div><label className="text-sm">Prioridade</label><select {...register('priority')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700"><option value="media">Média</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></div></div>
                                 <div className="grid grid-cols-2 gap-4"><div><label className="text-sm">Prazo</label><Input type="date" {...register('dueDate')}/></div><div><label className="text-sm">Status</label><select {...register('status')} className="w-full p-2 border rounded bg-transparent dark:bg-slate-900 dark:border-slate-700">{columns.map(col => (<option key={col.id} value={col.id}>{col.title}</option>))}</select></div></div>
                                 
-                                {/* SEÇÃO DE RECORRÊNCIA */}
                                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border dark:border-slate-800 space-y-4 mt-4">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
@@ -1186,7 +1094,7 @@ const onSubmit = async (data: TaskFormData) => {
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800 shadow-xl">
                     <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Gerenciar Colunas</h3><button onClick={() => setIsColumnsModalOpen(false)}><X/></button></div>
-                    {!editingColumn ? (<div className="flex flex-col gap-2 mb-6 bg-slate-50 p-3 rounded-lg border"><h4 className="text-xs font-bold uppercase text-slate-500">Nova Coluna</h4><Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-950 h-8 text-sm"/><textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição (opcional)" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-950" /><Button onClick={addColumn} size="sm" className="w-full"><Plus className="h-4 w-4 mr-2"/> Adicionar</Button></div>) : (<div className="flex flex-col gap-2 mb-6 bg-blue-50 p-3 rounded-lg border border-blue-200"><h4 className="text-xs font-bold uppercase text-blue-600">Editando Coluna</h4><Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-950 h-8 text-sm"/><textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-950" /><div className="flex gap-2"><Button onClick={() => { setEditingColumn(null); setNewColumnTitle(''); setNewColumnDesc(''); }} variant="outline" size="sm" className="flex-1">Cancelar</Button><Button onClick={updateColumn} size="sm" className="flex-1"><Save className="h-4 w-4 mr-2"/> Salvar</Button></div></div>)}
+                    {!editingColumn ? (<div className="flex flex-col gap-2 mb-6 bg-slate-50 p-3 rounded-lg border"><h4 className="text-xs font-bold uppercase text-slate-500">Nova Coluna</h4><Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-900 h-8 text-sm"/><textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição (opcional)" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-900" /><Button onClick={addColumn} size="sm" className="w-full"><Plus className="h-4 w-4 mr-2"/> Adicionar</Button></div>) : (<div className="flex flex-col gap-2 mb-6 bg-blue-50 p-3 rounded-lg border border-blue-200"><h4 className="text-xs font-bold uppercase text-blue-600">Editando Coluna</h4><Input value={newColumnTitle} onChange={e => setNewColumnTitle(e.target.value)} placeholder="Título" className="dark:bg-slate-900 h-8 text-sm"/><textarea value={newColumnDesc} onChange={e => setNewColumnDesc(e.target.value)} placeholder="Descrição" className="w-full p-2 border rounded bg-transparent text-sm h-16 dark:bg-slate-900" /><div className="flex gap-2"><Button onClick={() => { setEditingColumn(null); setNewColumnTitle(''); setNewColumnDesc(''); }} variant="outline" size="sm" className="flex-1">Cancelar</Button><Button onClick={updateColumn} size="sm" className="flex-1"><Save className="h-4 w-4 mr-2"/> Salvar</Button></div></div>)}
                     <div className="space-y-2 max-h-[300px] overflow-y-auto">{columns.map((col, idx) => (<div key={col.id} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-800 rounded border dark:border-slate-700 group"><div className="flex flex-col"><span className="text-sm font-medium">{col.title}</span>{col.description && <span className="text-[10px] text-slate-400 truncate max-w-[150px]">{col.description}</span>}</div><div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity"><button onClick={() => { setEditingColumn(col); setNewColumnTitle(col.title); setNewColumnDesc(col.description || ''); }} className="p-1 hover:bg-slate-200 rounded text-slate-500"><Edit className="h-3 w-3"/></button><button onClick={() => moveColumn(idx, 'up')} disabled={idx === 0} className="p-1 hover:bg-slate-200 rounded disabled:opacity-30"><ArrowUp className="h-3 w-3"/></button><button onClick={() => moveColumn(idx, 'down')} disabled={idx === columns.length - 1} className="p-1 hover:bg-slate-200 rounded disabled:opacity-30"><ArrowDown className="h-3 w-3"/></button><button onClick={() => removeColumn(col.id)} className="p-1 text-red-500 hover:bg-red-100 rounded ml-1"><Trash2 className="h-3 w-3"/></button></div></div>))}</div>
                 </div>
             </div>
@@ -1203,7 +1111,7 @@ const onSubmit = async (data: TaskFormData) => {
                         <select value={subProjectFilter} onChange={e => setSubProjectFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Frente: Todas</option>{allSubProjects.map(sp => <option key={sp} value={sp}>{sp}</option>)}</select>
                         <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Responsável: Todos</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select>
                     </div>
-                    <div className="flex gap-3 mt-6"><button onClick={() => { setPriorityFilter('all'); setClientFilter('all'); setAssigneeFilter('all'); setSubProjectFilter('all'); setDeadlineFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button><button onClick={() => setIsFilterModalOpen(false)} className="flex-1 py-2 bg-blue-600 text-white rounded">Aplicar</button></div>
+                    <div className="flex gap-3 mt-6"><button onClick={() => { setPriorityFilter('all'); setClientFilter('all'); setAssigneeFilter('all'); setSubProjectFilter('all'); setDeadlineFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button><button onClick={() => setIsFilterModalOpen(false)} className="flex-1 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Aplicar</button></div>
                 </div>
             </div>
         )}
@@ -1215,17 +1123,6 @@ const onSubmit = async (data: TaskFormData) => {
 // --- 3. VIEW METAS ---
 // ==================================================================================
 
-const goalSchema = z.object({
-  title: z.string().min(1, 'Título é obrigatório'),
-  description: z.string().optional(),
-  targetValue: z.string().min(1, 'Meta é obrigatória'),
-  currentValue: z.string().optional(),
-  deadline: z.string().optional(),
-  clientId: z.string().optional(),
-  notes: z.string().optional(),
-});
-type GoalFormData = z.infer<typeof goalSchema>;
-
 function GoalsView() {
   const { user } = useAuth();
   const [goals, setGoals] = useState<any[]>([]);
@@ -1233,7 +1130,6 @@ function GoalsView() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Schema de Validação
   const goalSchema = z.object({
     title: z.string().min(1, "Título é obrigatório"),
     targetValue: z.string().min(1, "Valor da meta é obrigatório"),
@@ -1248,14 +1144,12 @@ function GoalsView() {
     resolver: zodResolver(goalSchema)
   });
 
-  // --- 1. CARREGAMENTO CORRIGIDO (Com Await e Banco de Dados) ---
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
     try {
-      // Carrega Clientes para o Select
       const { data: clientsData } = await supabase
         .from('clients')
         .select('id, name, company')
@@ -1263,7 +1157,6 @@ function GoalsView() {
       
       if (clientsData) setClients(clientsData);
 
-      // Carrega Metas do App Settings (Banco de Dados Compartilhado)
       const { data: settingsData } = await supabase
         .from('app_settings')
         .select('value')
@@ -1271,7 +1164,6 @@ function GoalsView() {
         .single();
 
       if (settingsData?.value) {
-        // O Supabase já retorna o JSON pronto, não precisa de JSON.parse se for jsonb
         setGoals(settingsData.value);
       }
     } catch (error) {
@@ -1281,7 +1173,6 @@ function GoalsView() {
     }
   };
 
-  // --- 2. SALVAMENTO CORRIGIDO (Salva no Banco) ---
   const onSubmit = async (data: GoalFormData) => {
     const newGoal = {
       id: crypto.randomUUID(),
@@ -1290,13 +1181,10 @@ function GoalsView() {
     };
 
     const updatedGoals = [...goals, newGoal];
-    
-    // Atualiza visualmente na hora
     setGoals(updatedGoals);
     setIsModalOpen(false);
     reset();
 
-    // Salva no Banco para todos verem
     try {
         await supabase.from('app_settings').upsert({
             key: 'goals_config',
@@ -1311,7 +1199,6 @@ function GoalsView() {
 
   const deleteGoal = async (id: string) => {
       if(!confirm("Excluir meta?")) return;
-      
       const updatedGoals = goals.filter(g => g.id !== id);
       setGoals(updatedGoals);
 
@@ -1322,7 +1209,6 @@ function GoalsView() {
       });
   };
 
-  // Função auxiliar para cor da barra de progresso
   const getProgressColor = (progress: number) => {
       if (progress >= 100) return 'bg-green-500';
       if (progress >= 50) return 'bg-blue-500';
@@ -1620,10 +1506,8 @@ function ProductivityView() {
         const concluded = filteredTasks.filter(t => t.status === 'concluida').length;
         const pending = filteredTasks.filter(t => t.status === 'pendente' || t.status === 'em_andamento').length;
         const today = new Date();
-        // --- LÓGICA DE ATRASO CORRETA ---
         const overdue = filteredTasks.filter(t => {
             if (!t.due_date || t.status === 'concluida' || t.status === 'cancelada') return false;
-            // Cria data UTC para comparação correta
             let dateStr = t.due_date;
             if (!dateStr.includes('T')) dateStr += 'T12:00:00';
             const due = new Date(dateStr); due.setHours(0,0,0,0);
@@ -1669,7 +1553,6 @@ function ProductivityView() {
                     <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Concluídas</CardTitle><CheckSquare className="h-4 w-4 text-green-500"/></CardHeader>
                     <CardContent><div className="text-2xl font-bold text-green-600">{metrics.concluded}</div><p className="text-xs text-slate-500">Taxa: {metrics.completionRate.toFixed(1)}%</p></CardContent>
                 </Card>
-                {/* --- CARD DE ATRASADAS NOVO --- */}
                 <Card className="bg-white dark:bg-slate-900 border-l-4 border-l-red-500 shadow-sm border-slate-200 dark:border-slate-800">
                     <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium">Atrasadas</CardTitle><AlertTriangle className="h-4 w-4 text-red-500"/></CardHeader>
                     <CardContent><div className="text-2xl font-bold text-red-600">{metrics.overdue}</div><p className="text-xs text-slate-500">Atenção imediata</p></CardContent>
@@ -1701,7 +1584,6 @@ function ProductivityView() {
                                 <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full"><div className="bg-blue-500 h-2 rounded-full" style={{width: `${(metrics.statusDistribution[s]||0)/metrics.totalTasks*100}%`}}></div></div>
                             </div>
                         ))}
-                        {/* --- LINHA MANUAL DE ATRASADAS --- */}
                         <div>
                             <div className="flex justify-between text-sm mb-1"><span className="text-red-600 font-bold">Atrasadas (Alerta)</span><span className="text-red-600 font-bold">{metrics.overdue}</span></div>
                             <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full"><div className="bg-red-500 h-2 rounded-full" style={{width: `${(metrics.overdue/metrics.totalTasks*100) || 0}%`}}></div></div>

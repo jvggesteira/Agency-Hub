@@ -6,7 +6,7 @@ import { Header } from '@/components/custom/header';
 import { supabase } from '@/lib/supabase';
 import { 
   DollarSign, TrendingUp, TrendingDown, Filter, Loader2, ArrowUpRight, ArrowDownRight, Search, Plus, X, Trash2, Calendar, Repeat, MoreHorizontal,
-  CreditCard, QrCode, Barcode, Banknote, CheckCircle2, Circle, Ban
+  CreditCard, QrCode, Barcode, Banknote, CheckCircle2, Circle, Ban, Coins
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
@@ -18,7 +18,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { usePermission } from '@/hooks/use-permission';
 import { useAuth } from '@/hooks/use-auth';
 
-const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+// Formatação ajustada para exibir o sufixo N quando necessário
+const formatCurrency = (val: number, currency: string = 'BRL') => {
+  if (currency === 'N') {
+    return new Intl.NumberFormat('pt-BR', { style: 'decimal', minimumFractionDigits: 2 }).format(val) + ' N';
+  }
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+};
 
 const transactionSchema = z.object({
   description: z.string().min(1, 'Descrição obrigatória'),
@@ -28,6 +34,7 @@ const transactionSchema = z.object({
   customCategory: z.string().optional(),
   classification: z.enum(['fixo', 'variavel']),
   payment_method: z.string().optional(),
+  currency: z.enum(['BRL', 'N']), // Campo de moeda adicionado
   status: z.enum(['done', 'pending']),
   date: z.string().min(1, 'Data obrigatória'),
   repeat_months: z.string().optional(),
@@ -45,6 +52,7 @@ interface Transaction {
   category: string;
   classification: 'fixo' | 'variavel';
   payment_method?: string;
+  currency?: 'BRL' | 'N'; // Adicionado à interface
   status: 'done' | 'pending';
   installment_number?: number;
   installment_total?: number;
@@ -64,7 +72,10 @@ export default function FinancesPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // Filtros
+  // Controle de Visualização da Moeda (Padrão BRL para recuperar seus dados)
+  const [viewCurrency, setViewCurrency] = useState<'BRL' | 'N'>('BRL');
+
+  // Filtros Originais
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,6 +92,7 @@ export default function FinancesPage() {
         type: 'expense', 
         classification: 'variavel', 
         payment_method: 'pix', 
+        currency: 'BRL', // Padrão BRL
         status: 'done', 
         date: new Date().toISOString().split('T')[0], 
         repeat_months: '1' 
@@ -88,8 +100,8 @@ export default function FinancesPage() {
   });
 
   const selectedType = watch('type');
+  const formCurrency = watch('currency');
 
-  // --- 1. DEFINIÇÃO DA FUNÇÃO PRIMEIRO (Para evitar ReferenceError) ---
   const fetchFinancialData = async () => {
     setLoading(true);
     try {
@@ -99,11 +111,11 @@ export default function FinancesPage() {
       let query = supabase
         .from('transactions')
         .select('*')
+        .eq('currency', viewCurrency) // Filtra pela moeda atual da visão
         .gte('date', start.toISOString())
         .lte('date', end.toISOString())
         .order('date', { ascending: false });
 
-      // Filtro de Segurança
       if (user?.role !== 'admin') {
           query = query.neq('category', 'Colaborador'); 
       }
@@ -121,6 +133,7 @@ export default function FinancesPage() {
           category: t.category,
           classification: t.classification || 'variavel',
           payment_method: t.payment_method || 'pix',
+          currency: t.currency || 'BRL', // Fallback para BRL se vier nulo do banco antigo
           status: t.status || 'done',
           installment_number: t.installment_number || 1,
           installment_total: t.installment_total || 1,
@@ -146,14 +159,11 @@ export default function FinancesPage() {
     setMetrics({ income, expenses, balance: income - expenses, pending });
   };
 
-  // --- 2. USE EFFECT DEPOIS DA DEFINIÇÃO ---
   useEffect(() => { 
-      // Só busca se o usuário já carregou
       if (user && !authLoading) fetchFinancialData(); 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth, selectedYear, user, authLoading]);
+  }, [selectedMonth, selectedYear, user, authLoading, viewCurrency]); // Adicionado viewCurrency na dependência
 
-  // --- 3. TRAVAS DE RENDERIZAÇÃO ---
   if (authLoading) {
       return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 items-center justify-center">
@@ -162,7 +172,6 @@ export default function FinancesPage() {
       );
   }
 
-  // Se não é admin e não tem permissão explicita de view
   if (user?.role !== 'admin' && !can('finance', 'view')) { 
       return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -181,7 +190,6 @@ export default function FinancesPage() {
       );
   }
 
-  // ... (Resto das funções toggleStatus, onSubmit, handleDelete, etc. mantidas iguais)
   const toggleStatus = async (t: Transaction) => {
     const newStatus = t.status === 'done' ? 'pending' : 'done';
     const updatedTransactions = transactions.map(tr => tr.id === t.id ? { ...tr, status: newStatus } : tr);
@@ -210,7 +218,7 @@ export default function FinancesPage() {
               const currentStatus = (i === 0) ? data.status : 'pending';
               transactionsToInsert.push({
                   description: data.description, amount: numericAmount, type: data.type, category: finalCategory, classification: data.classification,
-                  payment_method: data.payment_method || 'pix', status: currentStatus, date: dateObj.toISOString(), notes: data.notes, group_id: groupId,
+                  payment_method: data.payment_method || 'pix', currency: data.currency, status: currentStatus, date: dateObj.toISOString(), notes: data.notes, group_id: groupId,
                   installment_number: i + 1, installment_total: repeat
               });
           }
@@ -266,9 +274,22 @@ export default function FinancesPage() {
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Financeiro</h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">Gestão de fluxo de caixa</p>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">Gestão de fluxo de caixa ({viewCurrency === 'BRL' ? 'Reais' : 'Moeda N'})</p>
             </div>
             <div className="flex gap-2 flex-wrap items-center">
+                 
+                 {/* SELETOR DE MOEDA GLOBAL */}
+                 <div className="flex bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm mr-2">
+                    <button 
+                      onClick={() => setViewCurrency('BRL')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${viewCurrency === 'BRL' ? 'bg-slate-900 text-white dark:bg-white dark:text-black' : 'text-slate-500'}`}
+                    >R$</button>
+                    <button 
+                      onClick={() => setViewCurrency('N')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${viewCurrency === 'N' ? 'bg-slate-900 text-white dark:bg-white dark:text-black' : 'text-slate-500'}`}
+                    >Moeda N</button>
+                 </div>
+
                  <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
                     <Calendar className="h-4 w-4 text-slate-500 ml-2" />
                     <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="bg-transparent text-sm font-medium dark:text-white cursor-pointer focus:outline-none">
@@ -278,7 +299,6 @@ export default function FinancesPage() {
                         {years.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
                 </div>
-                {/* Só mostra botão se puder criar */}
                 {can('finance', 'create') && (
                     <Button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 h-10">
                         <Plus className="mr-2 h-4 w-4"/> Novo Lançamento
@@ -291,23 +311,21 @@ export default function FinancesPage() {
              <div className="flex justify-center py-20"><Loader2 className="animate-spin h-10 w-10 text-blue-600"/></div>
           ) : (
             <>
-              {/* Cards de Métricas */}
               <div className="grid gap-6 md:grid-cols-3 mb-8">
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                     <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Receitas (Realizadas)</span><div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg"><TrendingUp className="h-5 w-5 text-green-600" /></div></div>
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.income)}</h2>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.income, viewCurrency)}</h2>
                 </div>
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                     <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Despesas (Pagas)</span><div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg"><TrendingDown className="h-5 w-5 text-red-600" /></div></div>
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.expenses)}</h2>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.expenses, viewCurrency)}</h2>
                 </div>
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                     <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Saldo (Realizado)</span><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg"><DollarSign className="h-5 w-5 text-blue-600" /></div></div>
-                    <h2 className={`text-2xl font-bold ${metrics.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(metrics.balance)}</h2>
+                    <h2 className={`text-2xl font-bold ${metrics.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(metrics.balance, viewCurrency)}</h2>
                 </div>
               </div>
 
-              {/* Tabela */}
               <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col h-[600px]">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
                   <div className="flex gap-4 items-center w-full">
@@ -317,10 +335,10 @@ export default function FinancesPage() {
                             <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent dark:text-white"/>
                         </div>
                   </div>
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
                         <select value={filterType} onChange={e => setFilterType(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Todas</option><option value="income">Receitas</option><option value="expense">Despesas</option></select>
                         <select value={filterClass} onChange={e => setFilterClass(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Tudo</option><option value="fixo">Fixo</option><option value="variavel">Variável</option></select>
-                    </div>
+                  </div>
                 </div>
                 <div className="flex-1 overflow-auto p-0">
                     <table className="w-full text-sm text-left">
@@ -361,14 +379,14 @@ export default function FinancesPage() {
                                             <div>
                                                 <div className="flex items-center gap-2">
                                                     <div title={t.payment_method}>
-                                                        {getPaymentIcon(t.payment_method || 'pix')}
+                                                       {getPaymentIcon(t.payment_method || 'pix')}
                                                     </div>
                                                     <p>{t.description}</p>
                                                 </div>
                                                 {t.installment_total && t.installment_total > 1 && (
-                                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 rounded text-slate-500">
+                                                     <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 rounded text-slate-500">
                                                         {t.installment_number}/{t.installment_total}
-                                                    </span>
+                                                     </span>
                                                 )}
                                             </div>
                                         </td>
@@ -380,34 +398,34 @@ export default function FinancesPage() {
                                         <td className="px-6 py-4 text-slate-500">{t.category}</td>
                                         <td className="px-6 py-4 text-slate-500">{new Date(t.date).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</td>
                                         <td className={`px-6 py-4 text-right font-medium ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount, t.currency)}
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <DropdownMenu>
+                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <button className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100">
+                                                     <button className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100">
                                                         <MoreHorizontal className="h-4 w-4"/>
-                                                    </button>
+                                                     </button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
                                                     <DropdownMenuItem onClick={() => handleDelete(t, 'single')} className="text-red-600 cursor-pointer">
                                                         <Trash2 className="h-4 w-4 mr-2"/> Excluir este
                                                     </DropdownMenuItem>
                                                     {t.group_id && (
-                                                        <DropdownMenuItem onClick={() => handleDelete(t, 'future')} className="text-red-600 cursor-pointer">
+                                                         <DropdownMenuItem onClick={() => handleDelete(t, 'future')} className="text-red-600 cursor-pointer">
                                                             <Repeat className="h-4 w-4 mr-2"/> Excluir este e futuros
-                                                        </DropdownMenuItem>
-                                                    )}
+                                                         </DropdownMenuItem>
+                                                     )}
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </td>
                                     </tr>
-                                ))
+                                 ))
                             )}
                         </tbody>
                     </table>
                 </div>
-              </div>
+               </div>
             </>
           )}
         </main>
@@ -416,84 +434,44 @@ export default function FinancesPage() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
            <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800 shadow-2xl overflow-y-auto max-h-[90vh]">
-               <div className="flex justify-between mb-6">
+                <div className="flex justify-between mb-6">
                   <h2 className="text-xl font-bold dark:text-white">Novo Lançamento</h2>
                   <button onClick={() => setIsModalOpen(false)}><X className="dark:text-white"/></button>
               </div>
-              
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                  {/* SELEÇÃO DE STATUS DO LANÇAMENTO */}
+                  
+                  {/* SELETOR DE MOEDA NO FORMULÁRIO */}
                   <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                        <label className="text-sm font-medium dark:text-slate-300">Status do Lançamento</label>
+                        <label className="text-sm font-medium dark:text-slate-300">Moeda</label>
                         <div className="flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setValue('status', 'done')}
-                                className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${
-                                    watch('status') === 'done' 
-                                    ? 'bg-green-600 text-white border-green-600 shadow-sm' 
-                                    : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'
-                                }`}
-                            >
-                                ✅ PAGO / REALIZADO
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setValue('status', 'pending')}
-                                className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${
-                                    watch('status') === 'pending' 
-                                    ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm' 
-                                    : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'
-                                }`}
-                            >
-                                ⏳ PENDENTE / AGENDADO
-                            </button>
+                            <button type="button" onClick={() => setValue('currency', 'BRL')} className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${formCurrency === 'BRL' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'}`}>REAIS (R$)</button>
+                            <button type="button" onClick={() => setValue('currency', 'N')} className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${formCurrency === 'N' ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'}`}>MOEDA N</button>
                         </div>
                   </div>
 
+                  <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <label className="text-sm font-medium dark:text-slate-300">Status do Lançamento</label>
+                        <div className="flex gap-2">
+                            <button type="button" onClick={() => setValue('status', 'done')} className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${watch('status') === 'done' ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'}`}>PAGO / REALIZADO</button>
+                            <button type="button" onClick={() => setValue('status', 'pending')} className={`flex-1 py-2 text-xs font-bold rounded-md border transition-all ${watch('status') === 'pending' ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm' : 'bg-white dark:bg-slate-950 text-slate-500 border-slate-200 dark:border-slate-700'}`}>PENDENTE / AGENDADO</button>
+                        </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
-                      <button type="button" onClick={() => setValue('type', 'income')} className={`py-3 rounded-lg border font-medium flex items-center justify-center gap-2 transition-all ${selectedType === 'income' ? 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}><ArrowUpRight className="h-4 w-4"/> Receita</button>
+                       <button type="button" onClick={() => setValue('type', 'income')} className={`py-3 rounded-lg border font-medium flex items-center justify-center gap-2 transition-all ${selectedType === 'income' ? 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}><ArrowUpRight className="h-4 w-4"/> Receita</button>
                       <button type="button" onClick={() => setValue('type', 'expense')} className={`py-3 rounded-lg border font-medium flex items-center justify-center gap-2 transition-all ${selectedType === 'expense' ? 'bg-red-100 border-red-500 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}><ArrowDownRight className="h-4 w-4"/> Despesa</button>
                   </div>
-
                   <div><label className="text-sm font-medium dark:text-slate-300">Descrição</label><Input {...register('description')} placeholder="Ex: Salário, Contrato X" className="dark:bg-slate-950"/></div>
-                  
                   <div className="grid grid-cols-2 gap-4">
-                     <div><label className="text-sm font-medium dark:text-slate-300">Valor (R$)</label><Input {...register('amount')} placeholder="0,00" className="dark:bg-slate-950"/></div>
+                      <div><label className="text-sm font-medium dark:text-slate-300">Valor</label><Input {...register('amount')} placeholder="0,00" className="dark:bg-slate-950"/></div>
                       <div><label className="text-sm font-medium dark:text-slate-300">Data de Pagamento</label><Input type="date" {...register('date')} className="dark:bg-slate-950"/></div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
-                      <div>
-                          <label className="text-sm font-medium dark:text-slate-300">Categoria</label>
-                          <select {...register('category')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950">
-                              <option value="">Selecione...</option>
-                              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                      </div>
-                      <div>
-                          <label className="text-sm font-medium dark:text-slate-300">Pagamento</label>
-                          <select {...register('payment_method')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950">
-                              <option value="pix">PIX / Transf.</option>
-                              <option value="boleto">Boleto</option>
-                              <option value="cartao">Cartão Crédito</option>
-                              <option value="dinheiro">Dinheiro</option>
-                          </select>
-                      </div>
+                      <div><label className="text-sm font-medium dark:text-slate-300">Categoria</label><select {...register('category')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="">Selecione...</option>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                      <div><label className="text-sm font-medium dark:text-slate-300">Pagamento</label><select {...register('payment_method')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="pix">PIX / Transf.</option><option value="boleto">Boleto</option><option value="cartao">Cartão Crédito</option><option value="dinheiro">Dinheiro</option></select></div>
                   </div>
-
-                  <div>
-                       <label className="text-sm font-medium dark:text-slate-300">Classificação</label>
-                       <select {...register('classification')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="variavel">Variável</option><option value="fixo">Fixo</option></select>
-                  </div>
-
-                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
-                      <div className="flex items-center gap-2 mb-2"><Repeat className="h-4 w-4 text-slate-500"/><label className="text-sm font-medium dark:text-slate-300">Repetir por (meses)</label></div>
-                      <div className="flex gap-2 items-center"><Input type="number" min="1" max="60" {...register('repeat_months')} className="dark:bg-slate-950 w-20" defaultValue="1"/><span className="text-xs text-slate-500">Ex: 6 para contrato semestral. (1 = hoje)</span></div>
-                  </div>
-
+                  <div><label className="text-sm font-medium dark:text-slate-300">Classificação</label><select {...register('classification')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="variavel">Variável</option><option value="fixo">Fixo</option></select></div>
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800"><div className="flex items-center gap-2 mb-2"><Repeat className="h-4 w-4 text-slate-500"/><label className="text-sm font-medium dark:text-slate-300">Repetir por (meses)</label></div><div className="flex gap-2 items-center"><Input type="number" min="1" max="60" {...register('repeat_months')} className="dark:bg-slate-950 w-20" defaultValue="1"/><span className="text-xs text-slate-500">Ex: 6 para contrato semestral. (1 = hoje)</span></div></div>
                   <div><label className="text-sm font-medium dark:text-slate-300">Observações</label><textarea {...register('notes')} className="w-full p-2 border rounded-md dark:bg-slate-950 dark:border-slate-800 dark:text-white" rows={2}></textarea></div>
-
                   <Button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 dark:bg-white dark:text-slate-900 mt-2">{isSubmitting ? <Loader2 className="animate-spin"/> : 'Salvar Lançamento'}</Button>
               </form>
            </div>

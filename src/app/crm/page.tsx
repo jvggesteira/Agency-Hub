@@ -11,7 +11,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { 
   Plus, UserPlus, X, ListTodo, History, Search, Copy, Upload, Download, FileText, CheckCircle, 
-  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Globe, Link as LinkIcon, Phone, XCircle, AlertCircle
+  Settings, Trash2, ArrowRightLeft, Flame, Snowflake, Minus, ChevronUp, ChevronDown, MapPin, Globe, Link as LinkIcon, Phone, XCircle, AlertCircle, Mail, DollarSign
 } from 'lucide-react';
 import { usePermission } from '@/hooks/use-permission';
 import AccessDenied from '@/components/custom/access-denied';
@@ -42,7 +42,6 @@ const leadSchema = z.object({
   state: z.string().optional(),
   owner_name: z.string().optional(),
 });
-
 type LeadFormData = z.infer<typeof leadSchema>;
 
 // Tipos
@@ -50,12 +49,24 @@ interface Pipeline { id: string; name: string; }
 interface PipelineStage { id: string; pipeline_id: string; name: string; position: number; color: string; }
 interface LeadActivity { id: string; type: 'note' | 'status_change' | 'task_created' | 'task_completed'; content: string; created_at: string; }
 interface LeadTask { id: string; title: string; due_date: string; is_completed: boolean; }
+// Procure a interface Lead (aprox. linha 45) e deixe assim:
 interface Lead { 
   id: string; title: string; description?: string; priority: string; temperature: 'quente' | 'morno' | 'frio';
   status: string; email: string; phone: string; phone_secondary?: string; company: string; budget: string; 
   source: string; created_at: string; notes?: string; pipeline_id?: string;
   instagram?: string; linkedin?: string; 
   city?: string; state?: string; owner_name?: string;
+  
+  // --- ADICIONE ESTAS 3 PROPRIEDADES ---
+  assignee_name?: string; // Alguns cards buscam string direta na raiz
+  assignee_id?: string;   // Alguns cards verificam se existe ID
+  assignee?: {            // O objeto padrão
+      id: string; 
+      name: string; 
+      full_name: string; 
+      email?: string;
+      avatar_url?: string;
+  } | null;
 }
 
 const SOURCES = [
@@ -105,7 +116,6 @@ const parseCSVRobust = (text: string): string[][] => {
   const cleanText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const firstLineEnd = cleanText.indexOf('\n');
   const firstLine = cleanText.substring(0, firstLineEnd > -1 ? firstLineEnd : cleanText.length);
-  
   const commaCount = (firstLine.match(/,/g) || []).length;
   const semiCount = (firstLine.match(/;/g) || []).length;
   const separator = semiCount >= commaCount ? ';' : ',';
@@ -114,10 +124,8 @@ const parseCSVRobust = (text: string): string[][] => {
   let currentRow: string[] = [];
   let currentCell = '';
   let insideQuotes = false;
-
   for (let i = 0; i < cleanText.length; i++) {
     const char = cleanText[i];
-    
     if (char === '"') {
       if (insideQuotes && cleanText[i+1] === '"') {
         currentCell += '"'; i++;
@@ -150,12 +158,13 @@ export default function CRMPage() {
   const [stages, setStages] = useState<PipelineStage[]>([]); 
   const [currentPipelineId, setCurrentPipelineId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]); // Lista de usuários para o Dropdown
   
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isWonModalOpen, setIsWonModalOpen] = useState(false);
-  const [isLostModalOpen, setIsLostModalOpen] = useState(false); // NOVO
+  const [isLostModalOpen, setIsLostModalOpen] = useState(false);
   const [isPipelineSettingsOpen, setIsPipelineSettingsOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
@@ -165,9 +174,7 @@ export default function CRMPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  
-  // Motivo da perda
-  const [lostReason, setLostReason] = useState(''); // NOVO
+  const [lostReason, setLostReason] = useState('');
 
   // Atividades
   const [activities, setActivities] = useState<LeadActivity[]>([]);
@@ -181,7 +188,7 @@ export default function CRMPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('active');
-
+  
   const [transferTargetPipeline, setTransferTargetPipeline] = useState('');
   const [transferTargetStage, setTransferTargetStage] = useState('');
   const [targetStages, setTargetStages] = useState<PipelineStage[]>([]);
@@ -201,6 +208,7 @@ export default function CRMPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') setWebhookUrl(`${window.location.origin}/api/leads`);
     initializeCRM();
+    fetchTeamMembers(); // Busca usuários ao iniciar
   }, []);
 
   useEffect(() => {
@@ -211,6 +219,11 @@ export default function CRMPage() {
           if(pipe) setEditPipelineName(pipe.name);
       }
   }, [currentPipelineId, pipelines]);
+
+  const fetchTeamMembers = async () => {
+      const { data } = await supabase.from('profiles').select('id, full_name, email');
+      if (data) setTeamMembers(data);
+  };
 
   const initializeCRM = async () => {
     setLoading(true);
@@ -249,28 +262,49 @@ export default function CRMPage() {
   const fetchLeads = async (pipelineId: string) => {
     const { data } = await supabase.from('leads').select('*').eq('pipeline_id', pipelineId).order('created_at', { ascending: false });
     if (data) {
-      const formattedLeads: Lead[] = data.map((l: any) => ({
-        id: l.id,
-        title: l.name,
-        description: l.company || l.email,
-        priority: 'media', 
-        temperature: l.temperature || 'morno',
-        status: l.status,
-        email: l.email,
-        phone: l.phone || '',
-        phone_secondary: l.phone_secondary || '',
-        company: l.company || '',
-        budget: String(l.budget || l.value || ''), 
-        source: l.source || 'manual',
-        notes: l.notes || '',
-        created_at: l.created_at,
-        pipeline_id: l.pipeline_id,
-        instagram: l.instagram || '',
-        linkedin: l.linkedin || '',
-        city: l.city || '',
-        state: l.state || '',
-        owner_name: l.owner_name || ''
-      }));
+      const formattedLeads: Lead[] = data.map((l: any) => {
+        // Normaliza o nome do dono
+        const ownerName = l.owner_name || ''; 
+
+        return {
+            id: l.id,
+            title: l.name,
+            description: l.company || l.email,
+            priority: 'media', 
+            temperature: l.temperature || 'morno',
+            status: l.status,
+            email: l.email,
+            phone: l.phone || '',
+            phone_secondary: l.phone_secondary || '',
+            company: l.company || '',
+            budget: String(l.budget || l.value || ''), 
+            source: l.source || 'manual',
+            notes: l.notes || '',
+            created_at: l.created_at,
+            pipeline_id: l.pipeline_id,
+            instagram: l.instagram || '',
+            linkedin: l.linkedin || '',
+            city: l.city || '',
+            state: l.state || '',
+            owner_name: ownerName,
+
+            // --- AQUI ESTÁ A CORREÇÃO "TIRO DE CANHÃO" ---
+            // 1. Preenche string direta na raiz (igual ao módulo de Tarefas)
+            assignee_name: ownerName,
+            
+            // 2. Preenche ID fictício na raiz (para passar validações de existência)
+            assignee_id: ownerName ? 'owner-manual' : undefined,
+
+            // 3. Preenche o objeto completo com todas as variações de nome
+            assignee: ownerName ? { 
+                id: 'owner-manual', 
+                name: ownerName, 
+                full_name: ownerName,
+                email: '', 
+                avatar_url: '' // String vazia para não quebrar componentes de imagem
+            } : null
+        };
+      });
       setLeads(formattedLeads);
     }
   };
@@ -297,7 +331,7 @@ export default function CRMPage() {
       if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
       const rows = parseCSVRobust(text);
       if (rows.length < 2) { 
-        toast({ title: "Arquivo Inválido", description: "Arquivo vazio.", variant: "destructive" }); 
+        toast({ title: "Arquivo Inválido", description: "Arquivo vazio.", variant: "destructive" });
         return;
       }
       
@@ -311,7 +345,6 @@ export default function CRMPage() {
       const newLeads: any[] = [];
       const firstStageId = stages[0].id;
       const getIdx = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h === k || h.includes(k)));
-
       const idxName = getIdx(['nome', 'name', 'cliente', 'lead', 'título', 'full name', 'contact']);
       const idxCompany = getIdx(['empresa', 'company', 'negócio']);
       const idxEmail = getIdx(['email', 'e-mail']);
@@ -337,7 +370,6 @@ export default function CRMPage() {
         const getVal = (index: number) => index > -1 && cols[index] ? cols[index].replace(/^"|"$/g, '') : '';
         const name = getVal(idxName);
         if (!name || name.toLowerCase() === 'nan' || name === '') continue;
-
         const email = getVal(idxEmail);
         const exists = leads.some(l => (email && l.email === email && email !== '') || (l.title === name));
         if (exists) continue; 
@@ -441,20 +473,16 @@ export default function CRMPage() {
         const targetStage = stages.find(s => s.id === newStageId);
         const isWonStage = targetStage?.name.toLowerCase().includes('ganho') || targetStage?.name.toLowerCase().includes('fechado');
         const isLostStage = targetStage?.name.toLowerCase().includes('perdido') || targetStage?.name.toLowerCase().includes('lost');
-        
         if (isWonStage) {
              const lead = leads.find(l => l.id === leadId);
              if (lead) { setPendingLeadToConvert(lead); setIsWonModalOpen(true); }
         }
-        // Se mudou para perdido manualmente via dropdown
         if (isLostStage) {
-             // Opcional: Poderia abrir o modal de motivo aqui, mas como é troca rápida, deixa passar direto
              toast({title: "Lead marcado como perdido", className: "bg-orange-500 text-white"});
         }
       }
   };
 
-  // --- NOVA FUNÇÃO: MARCAR COMO PERDIDO (COM MODAL) ---
   const openLostModal = (lead: Lead) => {
       setSelectedLead(lead);
       setLostReason('');
@@ -471,7 +499,6 @@ export default function CRMPage() {
       }
 
       await supabase.from('leads').update({ status: lostStage.id }).eq('id', selectedLead.id);
-      
       if (lostReason.trim()) {
           await supabase.from('lead_activities').insert({ 
               lead_id: selectedLead.id, 
@@ -505,7 +532,8 @@ export default function CRMPage() {
         toast({ title: "Sucesso", description: "Lead criado." });
       }
       fetchLeads(currentPipelineId); setIsModalOpen(false); setEditingLead(null); reset();
-    } catch { toast({ title: "Erro", variant: "destructive" }); }
+    } catch { toast({ title: "Erro", variant: "destructive" });
+    }
   };
 
   const openEditModal = (lead: Lead) => {
@@ -517,7 +545,7 @@ export default function CRMPage() {
         company: lead.company, budget: lead.budget, source: isStandardSource ? lead.source : 'outro', 
         customSource: isStandardSource ? '' : lead.source, notes: lead.notes, status: lead.status, 
         temperature: lead.temperature || 'morno', instagram: lead.instagram, linkedin: lead.linkedin,
-        city: lead.city, state: lead.state, owner_name: lead.owner_name
+        city: lead.city, state: lead.state, owner_name: lead.owner_name || ''
     });
     setIsModalOpen(true);
   }
@@ -530,7 +558,8 @@ export default function CRMPage() {
         setLeads(leads.filter(l => l.id !== id));
         toast({ title: "Excluído", description: "Lead removido do pipeline." });
         if (isDetailModalOpen) setIsDetailModalOpen(false);
-      } catch (error) { toast({ title: "Erro", description: "Erro ao excluir lead.", variant: "destructive" }); }
+      } catch (error) { toast({ title: "Erro", description: "Erro ao excluir lead.", variant: "destructive" });
+      }
   }
 
   const convertToClient = async (lead: Lead, contractUrl: string | null = null) => {
@@ -540,7 +569,8 @@ export default function CRMPage() {
       notes: `[Origem CRM] ${lead.notes || ''}`, contractStartDate: new Date().toISOString().split('T')[0],
       status: 'active', value: contractValue, contract_url: contractUrl
     }).select().single();
-    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return;
+    }
 
     if (newClient) {
         const { data: leadActs } = await supabase.from('lead_activities').select('*').eq('lead_id', lead.id);
@@ -588,7 +618,8 @@ export default function CRMPage() {
 
   const handleCancelWin = () => { setIsWonModalOpen(false); setPendingLeadToConvert(null); setContractFile(null); };
   
-  const openTransferModal = (lead: Lead) => { setSelectedLead(lead); setTransferTargetPipeline(''); setTargetStages([]); setIsTransferModalOpen(true); };
+  const openTransferModal = (lead: Lead) => { setSelectedLead(lead); setTransferTargetPipeline(''); setTargetStages([]);
+  setIsTransferModalOpen(true); };
   
   useEffect(() => {
       if (transferTargetPipeline) {
@@ -613,7 +644,8 @@ export default function CRMPage() {
       if (!name || name.trim() === "") return;
       try {
         const { data } = await supabase.from('pipelines').insert({ name }).select().single();
-        if (data) { await createDefaultStages(data.id); setPipelines([...pipelines, data]); setCurrentPipelineId(data.id); alert("Pipeline criado com sucesso!"); }
+        if (data) { await createDefaultStages(data.id); setPipelines([...pipelines, data]); setCurrentPipelineId(data.id); alert("Pipeline criado com sucesso!");
+        }
       } catch(err: any) { alert(`Erro: ${err.message}`); }
   };
 
@@ -636,7 +668,8 @@ export default function CRMPage() {
       if (!newStageName) return;
       const position = stages.length;
       const { data } = await supabase.from('pipeline_stages').insert({ pipeline_id: currentPipelineId, name: newStageName, position, color: 'bg-slate-200' }).select().single();
-      if (data) { setStages([...stages, data]); setNewStageName(''); }
+      if (data) { setStages([...stages, data]);
+      setNewStageName(''); }
   };
 
   const handleDeleteStage = async (stageId: string) => {
@@ -692,7 +725,7 @@ export default function CRMPage() {
         else if (statusFilter === 'lost') matchStatus = isLost;
         else if (statusFilter === 'won') matchStatus = isWon;
 
-        return matchSearch && matchSource && matchStatus; 
+        return matchSearch && matchSource && matchStatus;
     });
   }, [leads, searchTerm, sourceFilter, statusFilter, stages]);
 
@@ -810,22 +843,27 @@ export default function CRMPage() {
             <div className="h-[calc(100vh-280px)] overflow-x-auto pb-4">
                  <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
                     <div className="flex gap-4 h-full" style={{ minWidth: `${filteredStages.length * 320}px` }}>
-                      {filteredStages.map(stage => {
+                       {filteredStages.map(stage => {
                             const leadsInStage = leadsByStage[stage.id] || [];
                             return (
-                                <div key={stage.id} className="flex flex-col h-full w-80">
-                                    <div className="mb-3">
+                                <div key={stage.id} className="flex flex-col h-full w-80 flex-shrink-0 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                                    {/* CABEÇALHO FIXO (STICKY) */}
+                                    <div className="p-3 sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/50 rounded-t-xl border-b border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center justify-between">
                                             <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2"><span className={`w-3 h-3 rounded-full ${stage.color || 'bg-slate-400'}`}></span>{stage.name}</span>
-                                            <span className="text-xs bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full">{leadsInStage.length}</span>
+                                            <span className="text-xs bg-white dark:bg-slate-800 px-2 py-0.5 rounded-full border dark:border-slate-700">{leadsInStage.length}</span>
                                         </div>
                                         <div className="text-sm font-bold pl-5 mt-1 text-slate-500">{formatCurrencyDisplay(totalsByStatus[stage.id] || 0)}</div>
                                     </div>
-                                    <KanbanColumn id={stage.id} title="" tasks={leadsInStage} color={stage.color || 'bg-slate-100'}>
-                                        {leadsInStage.map(lead => (
-                                                <SortableTaskCard key={lead.id} task={lead as any} clientName={lead.company || lead.email} getPriorityColor={() => 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'} openEditModal={() => openEditModal(lead)} deleteTask={() => deleteLead(lead.id)} onCardClick={() => openDetailModal(lead)} />
-                                        ))}
-                                    </KanbanColumn>
+                                    
+                                    {/* CORPO DA COLUNA COM SCROLL */}
+                                    <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar p-2">
+                                        <KanbanColumn id={stage.id} title="" tasks={leadsInStage} color="bg-transparent">
+                                            {leadsInStage.map(lead => (
+                                                    <SortableTaskCard key={lead.id} task={lead as any} clientName={lead.company || lead.email} getPriorityColor={() => 'bg-white dark:bg-slate-950 border dark:border-slate-800'} openEditModal={() => openEditModal(lead)} deleteTask={() => deleteLead(lead.id)} onCardClick={() => openDetailModal(lead)} />
+                                            ))}
+                                        </KanbanColumn>
+                                    </div>
                                 </div>
                             );
                         })}
@@ -838,13 +876,22 @@ export default function CRMPage() {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full p-6 border dark:border-slate-800 max-h-[90vh] overflow-y-auto">
+           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full p-6 border dark:border-slate-800 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between mb-4"><h2 className="text-xl font-bold dark:text-white">{editingLead ? 'Editar' : 'Novo'} Lead</h2><button onClick={() => setIsModalOpen(false)}><X/></button></div>
               <form onSubmit={handleSubmit(onModalSubmit)} className="space-y-4">
                 <input type="hidden" {...register('status')} /> 
                 <div className="grid grid-cols-2 gap-3"><Input {...register('name')} placeholder="Nome" className="dark:bg-slate-950" /><Input {...register('company')} placeholder="Empresa" className="dark:bg-slate-950" /></div>
                 <div className="grid grid-cols-2 gap-3"><Input {...register('email')} placeholder="Email" className="dark:bg-slate-950" /><Input {...register('phone')} placeholder="Telefone" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatPhone(e.target.value); register('phone').onChange(e); }}/></div>
-                <div className="grid grid-cols-2 gap-3"><Input {...register('phone_secondary')} placeholder="Telefone 2" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatPhone(e.target.value); register('phone_secondary').onChange(e); }} /><Input {...register('owner_name')} placeholder="Dono do Lead" className="dark:bg-slate-950" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                    <Input {...register('phone_secondary')} placeholder="Telefone 2" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatPhone(e.target.value); register('phone_secondary').onChange(e); }} />
+                    {/* DROPDOWN DE RESPONSÁVEL (CORREÇÃO PEDIDA) */}
+                    <select {...register('owner_name')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950">
+                        <option value="">Sem responsável</option>
+                        {teamMembers.map(member => (
+                            <option key={member.id} value={member.full_name}>{member.full_name}</option>
+                        ))}
+                    </select>
+                </div>
                 <div className="grid grid-cols-2 gap-3"><Input {...register('city')} placeholder="Cidade" className="dark:bg-slate-950" /><Input {...register('state')} placeholder="UF" className="dark:bg-slate-950" /></div>
                 <div className="grid grid-cols-2 gap-3"><Input {...register('instagram')} placeholder="Instagram (Link ou @)" className="dark:bg-slate-950" /><Input {...register('linkedin')} placeholder="LinkedIn" className="dark:bg-slate-950" /></div>
                 <div className="grid grid-cols-2 gap-3"><Input {...register('budget')} placeholder="Orçamento" className="dark:bg-slate-950" onChange={(e) => { e.target.value = formatCurrencyInput(e.target.value); register('budget').onChange(e); }}/><select {...register('temperature')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="morno">Morno</option><option value="quente">Quente</option><option value="frio">Frio</option></select></div>
@@ -861,38 +908,73 @@ export default function CRMPage() {
               <div className="w-full max-w-xl bg-white dark:bg-slate-950 h-full shadow-2xl p-6 border-l dark:border-slate-800 overflow-y-auto animate-in slide-in-from-right">
                   <div className="flex justify-between items-start mb-6">
                       <div className="flex-1">
-                          <h2 className="text-2xl font-bold dark:text-white">{selectedLead.title}</h2>
+                          <h2 className="text-2xl font-bold dark:text-white mb-2">{selectedLead.title}</h2>
                           
+                          {/* --- ÁREA DE VISUALIZAÇÃO RÁPIDA (MELHORADA) --- */}
+                          <div className="flex flex-col gap-2 mb-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                              <div className="flex items-center gap-4 text-sm">
+                                  {selectedLead.email && <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><Mail className="h-4 w-4 text-slate-400"/> {selectedLead.email}</div>}
+                                  {selectedLead.phone && <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><Phone className="h-4 w-4 text-slate-400"/> {formatPhone(selectedLead.phone)}</div>}
+                              </div>
+                              <div className="flex items-center gap-4 text-sm">
+                                  {selectedLead.company && <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300"><FileText className="h-4 w-4 text-slate-400"/> {selectedLead.company}</div>}
+                                  {selectedLead.budget && <div className="flex items-center gap-2 text-green-700 dark:text-green-400 font-medium"><DollarSign className="h-4 w-4"/> {selectedLead.budget}</div>}
+                              </div>
+                          </div>
+
                           <div className="mt-2 mb-2">
                              <label className="text-xs text-slate-500 font-bold uppercase">Fase do Funil</label>
                              <select className="w-full mt-1 p-2 border rounded-md dark:bg-slate-900 dark:border-slate-700 text-sm" value={selectedLead.status} onChange={(e) => handleManualStageChange(selectedLead.id, e.target.value)}>
-                                {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                 {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                              </select>
                           </div>
 
                           <div className="flex flex-wrap gap-2 mt-2">
-                               {selectedLead.company && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><FileText className="h-3 w-3"/> {selectedLead.company}</span>}
                                {selectedLead.city && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs flex items-center gap-1"><MapPin className="h-3 w-3"/> {selectedLead.city}/{selectedLead.state}</span>}
                                {selectedLead.instagram && <a href={selectedLead.instagram.includes('http') ? selectedLead.instagram : `https://instagram.com/${selectedLead.instagram.replace('@','')}`} target="_blank" className="px-2 py-1 bg-pink-100 text-pink-700 rounded text-xs flex items-center gap-1"><Globe className="h-3 w-3"/> Insta</a>}
                                {selectedLead.linkedin && <a href={selectedLead.linkedin} target="_blank" className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs flex items-center gap-1"><LinkIcon className="h-3 w-3"/> LinkedIn</a>}
                           </div>
-                          {selectedLead.phone_secondary && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Phone className="h-3 w-3"/> Tel 2: {formatPhone(selectedLead.phone_secondary)}</p>}
-                          {selectedLead.owner_name && <p className="text-xs text-slate-500 mt-1">Dono: {selectedLead.owner_name}</p>}
+                          {selectedLead.owner_name && <p className="text-xs text-slate-500 mt-2">Dono: {selectedLead.owner_name}</p>}
                       </div>
+                      
                       <div className="flex flex-col gap-2 ml-4">
                           <Button size="sm" variant="outline" className="h-8 text-xs w-full" onClick={() => openTransferModal(selectedLead)}><ArrowRightLeft className="h-3 w-3 mr-1"/> Transferir</Button>
                           <Button size="sm" variant="destructive" className="h-8 text-xs w-full bg-red-100 text-red-600 hover:bg-red-200 border-none" onClick={() => openLostModal(selectedLead)}><XCircle className="h-3 w-3 mr-1"/> Marcar como Perdido</Button>
-                          <button onClick={() => setIsDetailModalOpen(false)} className="text-slate-400 hover:text-slate-600 self-end"><X/></button>
+                          <button onClick={() => setIsDetailModalOpen(false)} className="text-slate-400 hover:text-slate-600 self-end mt-2"><X/></button>
                       </div>
                   </div>
-                  {selectedLead.notes && <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-900/30 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap"><strong>Notas/Histórico:</strong><br/>{selectedLead.notes}</div>}
+                  
+                  {/* NOTAS COM QUEBRA DE LINHA CORRIGIDA */}
+                  {selectedLead.notes && (
+                      <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-900/30 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 whitespace-pre-wrap break-words">
+                          <strong>Notas/Histórico:</strong><br/>
+                          {selectedLead.notes}
+                      </div>
+                  )}
+
                   <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 mb-6"><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><ListTodo className="h-4 w-4" /> Tarefas</h3><div className="flex gap-2 mb-4"><Input placeholder="Nova tarefa..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} className="dark:bg-slate-900"/><Input type="datetime-local" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} className="w-40 dark:bg-slate-950"/><Button size="sm" onClick={handleAddTask}><Plus className="h-4 w-4" /></Button></div><div className="space-y-2 max-h-60 overflow-y-auto">{tasks.map(task => (<div key={task.id} className="flex items-center gap-3 p-2 bg-white dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-800"><input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task.id, task.is_completed)} className="w-4 h-4 rounded"/><div className={`flex-1 ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}><p className="text-sm font-medium">{task.title}</p><p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleString('pt-BR')}</p></div></div>))}</div></div>
-                  <div><h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><History className="h-4 w-4" /> Histórico & Notas</h3><div className="flex gap-2 mb-6"><Input placeholder="Adicionar nota..." value={newNote} onChange={e => setNewNote(e.target.value)} className="dark:bg-slate-900"/><Button size="sm" onClick={handleAddNote}>Enviar</Button></div><div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-3 space-y-6 pb-10">{activities.map((act) => (<div key={act.id} className="relative pl-6"><div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-950 ${act.type === 'status_change' ? 'bg-blue-500' : act.type === 'task_created' ? 'bg-orange-500' : 'bg-slate-400'}`}></div><div className="text-xs text-slate-400 mb-1">{new Date(act.created_at).toLocaleString('pt-BR')}</div><div className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg text-sm text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">{act.content}</div></div>))}</div></div>
+                  
+                  {/* HISTÓRICO COM QUEBRA DE LINHA CORRIGIDA */}
+                  <div>
+                      <h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><History className="h-4 w-4" /> Histórico & Notas</h3>
+                      <div className="flex gap-2 mb-6"><Input placeholder="Adicionar nota..." value={newNote} onChange={e => setNewNote(e.target.value)} className="dark:bg-slate-900"/><Button size="sm" onClick={handleAddNote}>Enviar</Button></div>
+                      <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-3 space-y-6 pb-10">
+                          {activities.map((act) => (
+                              <div key={act.id} className="relative pl-6">
+                                  <div className={`absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-white dark:border-slate-950 ${act.type === 'status_change' ? 'bg-blue-500' : act.type === 'task_created' ? 'bg-orange-500' : 'bg-slate-400'}`}></div>
+                                  <div className="text-xs text-slate-400 mb-1">{new Date(act.created_at).toLocaleString('pt-BR')}</div>
+                                  <div className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg text-sm text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800 whitespace-pre-wrap break-words">
+                                      {act.content}
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
               </div>
           </div>
       )}
 
-      {/* MODAL MARCAR COMO PERDIDO (NOVO) */}
+      {/* MODAL MARCAR COMO PERDIDO */}
       {isLostModalOpen && (
           <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
@@ -900,18 +982,11 @@ export default function CRMPage() {
                       <AlertCircle className="h-6 w-6"/>
                       <h3 className="font-bold text-lg">Marcar como Perdido</h3>
                   </div>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                      Este lead será movido para a etapa "Perdido" e ficará oculto da visão principal.
-                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Este lead será movido para a etapa "Perdido" e ficará oculto da visão principal.</p>
                   <div className="space-y-4">
                       <div>
                           <label className="text-sm font-medium">Motivo da perda (Opcional)</label>
-                          <textarea 
-                              className="w-full mt-1 p-2 border rounded-md dark:bg-slate-950 dark:border-slate-700 text-sm h-24 resize-none"
-                              placeholder="Ex: Preço alto, Fechou com concorrente..."
-                              value={lostReason}
-                              onChange={(e) => setLostReason(e.target.value)}
-                          />
+                          <textarea className="w-full mt-1 p-2 border rounded-md dark:bg-slate-950 dark:border-slate-700 text-sm h-24 resize-none" placeholder="Ex: Preço alto, Fechou com concorrente..." value={lostReason} onChange={(e) => setLostReason(e.target.value)}/>
                       </div>
                       <div className="flex gap-2">
                           <Button variant="outline" className="flex-1" onClick={() => setIsLostModalOpen(false)}>Cancelar</Button>
