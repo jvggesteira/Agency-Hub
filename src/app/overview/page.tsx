@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
 import { 
@@ -20,9 +20,9 @@ interface GeneralData {
   history: Array<{ date: string; revenue: number; leads: number }>;
 }
 
-const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-const formatNumber = (val: number) => new Intl.NumberFormat('pt-BR').format(val);
-const formatPercent = (val: number) => `${val?.toFixed(2)}%`;
+const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+const formatNumber = (val: number) => new Intl.NumberFormat('pt-BR').format(val || 0);
+const formatPercent = (val: number) => `${(val || 0).toFixed(2)}%`;
 
 export default function GeneralOverviewPage() {
   const [data, setData] = useState<GeneralData | null>(null);
@@ -30,50 +30,65 @@ export default function GeneralOverviewPage() {
   const [timeRange, setTimeRange] = useState("30");
   const [chartGrouping, setChartGrouping] = useState<'day' | 'week' | 'month'>('day');
   
-  // Datas Customizadas (Iniciando com o mês atual ou range fixo)
-  const [customStart, setCustomStart] = useState(new Date().toISOString().split('T')[0]); 
+  // Datas Customizadas (Iniciando com o mês atual)
+  const [customStart, setCustomStart] = useState(() => {
+      const date = new Date();
+      date.setDate(date.getDate() - 30);
+      return date.toISOString().split('T')[0];
+  }); 
   const [customEnd, setCustomEnd] = useState(new Date().toISOString().split('T')[0]);
 
-  // Calcula datas
-  const getDateRangeParams = (option: string) => {
-    if (option === 'custom') {
-        return `start=${customStart}&end=${customEnd}`;
-    }
-
-    const end = new Date(); // DATA ATUAL (Em produção usa-se data atual)
-    const start = new Date();
-    start.setDate(end.getDate() - parseInt(option));
-    
-    // Ajuste para não quebrar em produção
-    return `start=${start.toISOString().split('T')[0]}&end=${end.toISOString().split('T')[0]}`;
-  };
-
-  useEffect(() => {
-    // Se for customizado e faltar data, para aqui.
-    if (timeRange === 'custom' && (!customStart || !customEnd)) return;
-    
+  // Função para obter parâmetros de data de forma estável
+  const fetchOverviewData = useCallback(async () => {
     setLoading(true);
-    const dateQuery = getDateRangeParams(timeRange);
+    try {
+        let startQuery = '';
+        let endQuery = '';
 
-    fetch(`/api/analytics/general?${dateQuery}&groupBy=${chartGrouping}`)
-      .then(async (res) => {
-        const text = await res.text();
-        try {
-            const json = JSON.parse(text);
-            if (!res.ok) throw new Error(json.error || 'Erro na API');
-            setData(json);
-        } catch (e) {
-            console.error("Erro JSON:", e);
-            throw new Error("Resposta inválida da API");
+        if (timeRange === 'custom') {
+            if (!customStart || !customEnd) {
+                setLoading(false);
+                return; // Aguarda o usuário preencher
+            }
+            startQuery = customStart;
+            endQuery = customEnd;
+        } else {
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - parseInt(timeRange));
+            startQuery = start.toISOString().split('T')[0];
+            endQuery = end.toISOString().split('T')[0];
         }
-      })
-      .catch((err) => {
-          console.error("Erro Fatal Overview:", err);
-      })
-      .finally(() => {
-          setLoading(false);
-      });
+
+        const query = `start=${startQuery}&end=${endQuery}&groupBy=${chartGrouping}`;
+        const res = await fetch(`/api/analytics/general?${query}`);
+        
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || 'Erro ao buscar dados');
+        }
+
+        const json = await res.json();
+        setData(json);
+    } catch (error) {
+        console.error("Erro Fatal Overview:", error);
+        // Em caso de erro, seta dados zerados para não quebrar a UI
+        setData({
+            report: {
+                financial: { revenue: 0, invested: 0, netProfit: 0, roi: 0, roas: 0, cac: 0, ticket: 0 },
+                funnel: { impressions: 0, clicks: 0, leads: 0, sales: 0, cpl: 0, ctr: 0, convLead: 0, convSales: 0 }
+            },
+            history: []
+        });
+    } finally {
+        setLoading(false);
+    }
   }, [timeRange, chartGrouping, customStart, customEnd]);
+
+  // Efeito único para disparar a busca
+  useEffect(() => {
+    fetchOverviewData();
+  }, [fetchOverviewData]);
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -144,11 +159,11 @@ export default function GeneralOverviewPage() {
                             description="Soma dos lucros reais dos clientes"
                         />
                         
-                        <KPICard title="ROAS Médio" value={`${data.report.financial.roas.toFixed(2)}x`} icon={<BarChart3 className="h-4 w-4 text-blue-600" />} valueColor="text-blue-700" />
+                        <KPICard title="ROAS Médio" value={`${(data.report.financial.roas || 0).toFixed(2)}x`} icon={<BarChart3 className="h-4 w-4 text-blue-600" />} valueColor="text-blue-700" />
                         
                         <KPICard 
                             title="ROI Global (x)" 
-                            value={`${(data.report.financial.roi / 100).toFixed(2)}x`} 
+                            value={`${((data.report.financial.roi || 0) / 100).toFixed(2)}x`} 
                             icon={<Target className="h-4 w-4 text-purple-600" />}
                             valueColor={data.report.financial.roi > 0 ? 'text-purple-700' : 'text-red-700'}
                             description="Retorno sobre Investimento Total"
@@ -161,11 +176,11 @@ export default function GeneralOverviewPage() {
                             <h3 className="text-sm font-bold text-slate-700 mb-6 flex items-center gap-2"><Filter className="h-4 w-4"/> Funil Agregado (Todos os Clientes)</h3>
                             <div className="flex flex-col items-center justify-center space-y-1 max-w-2xl mx-auto">
                                 <PyramidLevel label="Impressões Totais" value={formatNumber(data.report.funnel.impressions)} width="w-[100%]" color="bg-blue-50 border-blue-200 text-blue-800" />
-                                <PyramidConnector label="CTR Médio" value={`${data.report.funnel.ctr.toFixed(2)}%`} />
+                                <PyramidConnector label="CTR Médio" value={`${(data.report.funnel.ctr || 0).toFixed(2)}%`} />
                                 <PyramidLevel label="Cliques Totais" value={formatNumber(data.report.funnel.clicks)} width="w-[85%]" color="bg-indigo-50 border-indigo-200 text-indigo-900" />
-                                <PyramidConnector label="Conv. Lead" value={`${data.report.funnel.convLead.toFixed(2)}%`} />
+                                <PyramidConnector label="Conv. Lead" value={`${(data.report.funnel.convLead || 0).toFixed(2)}%`} />
                                 <PyramidLevel label="Leads Totais" value={formatNumber(data.report.funnel.leads)} width="w-[70%]" color="bg-purple-50 border-purple-200 text-purple-800" />
-                                <PyramidConnector label="Fechamento" value={`${data.report.funnel.convSales.toFixed(2)}%`} />
+                                <PyramidConnector label="Fechamento" value={`${(data.report.funnel.convSales || 0).toFixed(2)}%`} />
                                 <PyramidLevel label="Vendas Totais" value={formatNumber(data.report.funnel.sales)} width="w-[55%]" color="bg-emerald-100 border-emerald-300 text-emerald-900" />
                             </div>
                         </div>

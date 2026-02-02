@@ -81,7 +81,46 @@ export default function DrePage() {
       const start = new Date(Number(selectedYear), Number(selectedMonth) - 1, 1);
       const end = new Date(Number(selectedYear), Number(selectedMonth), 0, 23, 59, 59);
 
-      // BUSCAR DADOS DO MÊS ATUAL PRIMEIRO
+      // BUSCAR SALDO INICIAL DEFINIDO PELO USUÁRIO PARA ESTE MÊS
+      // Se existir, ele substitui qualquer cálculo histórico.
+      const { data: manualStartData } = await supabase
+        .from('transactions')
+        .select('amount, type')
+        .eq('currency', selectedCurrency)
+        .eq('description', `Saldo Inicial Definido (${selectedCurrency})`)
+        .gte('date', start.toISOString())
+        .lte('date', end.toISOString())
+        .maybeSingle();
+
+      let previousBalance = 0;
+      let useManualStart = false;
+
+      if (manualStartData) {
+          // LÓGICA DO USUÁRIO: Se definiu manualmente, esse é o valor que começa o mês.
+          previousBalance = Number(manualStartData.amount);
+          useManualStart = true;
+      } else {
+          // Se não definiu, segue o fluxo normal (Soma tudo até o dia 1)
+          const { data: prevData } = await supabase
+            .from('transactions')
+            .select('amount, type, description')
+            .eq('currency', selectedCurrency)
+            .lt('date', start.toISOString())
+            .or('status.eq.done,status.eq.paid');
+
+          if (prevData) {
+            prevData.forEach(t => {
+                // Ignora "Saldo Inicial" de meses passados na soma acumulada para não duplicar se a lógica mudar
+                if (t.description?.includes('Saldo Inicial Definido')) return;
+
+                const val = Number(t.amount);
+                if (t.type === 'income') previousBalance += val;
+                else previousBalance -= val;
+            });
+          }
+      }
+
+      // 2. DADOS DO MÊS ATUAL
       let query = supabase
         .from('transactions')
         .select('*, clients(name, company)')
@@ -101,7 +140,7 @@ export default function DrePage() {
       let variableCosts = 0;
       let fixedCosts = 0;
       let financialResult = 0;
-      let taxesValues = 0;
+      let taxesValues = 0; 
 
       const grossRevenueDetails: DetailGroup = {};
       const variableCostsDetails: DetailGroup = {};
@@ -113,26 +152,15 @@ export default function DrePage() {
         group[key] += value;
       };
 
-      // Verifica se houve fechamento manual NESTE mês
-      let manualClosingBalanceThisMonth: number | null = null;
-
       txs.forEach(t => {
           if (selectedClient !== 'all' && t.client_id !== selectedClient) return;
           const isPaid = t.status === 'done' || t.status === 'paid';
           if (!isPaid) return; 
 
           const description = (t.description || '').trim();
-          const descriptionLower = description.toLowerCase();
-
-          // Se encontrar o fechamento manual DESTE mês, guarda o valor
-          if (description === `Fechamento de Caixa (${selectedCurrency})`) {
-              manualClosingBalanceThisMonth = Number(t.amount);
-          }
-
-          // Ignora transações de ajuste nos cálculos de DRE
-          if (description === `Fechamento de Caixa (${selectedCurrency})` || 
-              descriptionLower.includes('ajuste de saldo') ||
-              descriptionLower.includes('saldo de abertura')) return;
+          
+          // IGNORAR O PRÓPRIO SALDO INICIAL NO CÁLCULO DE RECEITA/DESPESA DO MÊS
+          if (description === `Saldo Inicial Definido (${selectedCurrency})`) return;
 
           const val = Math.abs(Number(t.amount)); 
           const categoryName = t.category || 'Outros';
@@ -151,6 +179,8 @@ export default function DrePage() {
           } else if (typeLower === 'expense') {
               if (catLower.includes('imposto')) {
                   taxesValues += val; 
+                  fixedCosts += val; 
+                  addToGroup(fixedCostsDetails, categoryName, val);
               } 
               else if (['juros', 'multa', 'tarifa', 'bancario', 'bancário'].some(term => catLower.includes(term))) {
                   financialResult += val;
@@ -167,48 +197,7 @@ export default function DrePage() {
           }
       });
 
-      // --- CÁLCULO DO SALDO ANTERIOR (Abertura) ---
-      let previousBalance = 0;
-      
-      // Busca fechamento do mês anterior
-      const { data: lastMonthClosing } = await supabase
-        .from('transactions')
-        .select('amount')
-        .eq('description', `Fechamento de Caixa (${selectedCurrency})`)
-        .lt('date', start.toISOString())
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (lastMonthClosing) {
-          // Cenário 1: Existe um fechamento no mês passado. O saldo inicial é ele.
-          previousBalance = Number(lastMonthClosing.amount);
-      } else if (manualClosingBalanceThisMonth !== null) {
-          // Cenário 2: Existe fechamento HOJE, mas não no mês passado.
-          // Saldo Inicial = Saldo Final (Ajustado) - Resultado de Caixa do Mês
-          const monthlyCashResult = grossRevenue - (variableCosts + fixedCosts + financialResult + taxesValues);
-          previousBalance = manualClosingBalanceThisMonth - monthlyCashResult;
-      } else {
-          // Cenário 3: Nenhum fechamento manual. Calcula histórico total.
-          const { data: prevData } = await supabase
-            .from('transactions')
-            .select('amount, type, description')
-            .eq('currency', selectedCurrency)
-            .lt('date', start.toISOString())
-            .or('status.eq.done,status.eq.paid');
-
-          if (prevData) {
-            prevData.forEach(t => {
-                const desc = (t.description || '').toLowerCase();
-                if (desc.includes('fechamento de caixa')) return; 
-
-                const val = Number(t.amount);
-                if (t.type === 'income') previousBalance += val;
-                else previousBalance -= val;
-            });
-          }
-      }
-
+      // Provisão de Imposto (Apenas visual)
       let calculatedTax = 0;
       if (selectedCurrency === 'BRL') {
         if (taxRate > 0) {
@@ -222,21 +211,15 @@ export default function DrePage() {
       const netProfit = ebitda - financialResult;
 
       // CÁLCULO FINAL DE CAIXA
-      let finalBalance = 0;
-      const totalOutflows = variableCosts + fixedCosts + financialResult + taxesValues;
-      const monthlyCashResult = grossRevenue - totalOutflows;
-
-      if (manualClosingBalanceThisMonth !== null) {
-          finalBalance = manualClosingBalanceThisMonth;
-      } else {
-          finalBalance = previousBalance + monthlyCashResult;
-      }
+      // Lógica do Usuário: Saldo Final = Saldo Inicial Definido (ou anterior) + Receitas - Despesas
+      const totalOutflows = variableCosts + fixedCosts + financialResult; // fixedCosts já inclui impostos pagos
+      const finalBalance = previousBalance + grossRevenue - totalOutflows;
 
       let marginPercent = 0;
       if (grossRevenue > 0) marginPercent = (netProfit / grossRevenue) * 100;
 
       setDre({
-        previousBalance, // Agora reflete o fechamento exato do mês anterior ou a engenharia reversa do ajuste atual
+        previousBalance, // Mostra o valor que você definiu como inicial
         grossRevenue, grossRevenueDetails,
         taxes: calculatedTax,
         netRevenue,
@@ -246,7 +229,7 @@ export default function DrePage() {
         ebitda, 
         financialResult, financialResultDetails,
         netProfit,
-        finalBalance, 
+        finalBalance, // Atualiza dinamicamente conforme despesas entram
         marginPercent
       });
     } catch (error) {
@@ -263,34 +246,34 @@ export default function DrePage() {
     try {
       const targetValue = parseFloat(newInitialBalance.replace(',', '.'));
       
-      // Salva o fechamento no ÚLTIMO segundo do mês selecionado.
-      // Isso define o Saldo Final deste mês e, consequentemente, o Inicial do próximo.
-      const adjustmentDate = new Date(Number(selectedYear), Number(selectedMonth) - 1, 28, 23, 59, 59); // Fim do mês (dia 28 para segurança em fev)
-      // Ajuste para último dia real do mês
-      const lastDay = new Date(Number(selectedYear), Number(selectedMonth), 0).getDate();
-      adjustmentDate.setDate(lastDay);
+      // Data: Dia 01 do mês selecionado
+      const startOfMonth = new Date(Number(selectedYear), Number(selectedMonth) - 1, 1).toISOString();
+      const endOfMonth = new Date(Number(selectedYear), Number(selectedMonth), 0).toISOString();
 
-      // Remove fechamentos anteriores deste mês para evitar duplicidade
+      // 1. Remove qualquer definição anterior para este mês
       await supabase.from('transactions')
         .delete()
-        .eq('description', `Fechamento de Caixa (${selectedCurrency})`)
-        .gte('date', new Date(Number(selectedYear), Number(selectedMonth) - 1, 1).toISOString())
-        .lte('date', new Date(Number(selectedYear), Number(selectedMonth), 0).toISOString());
+        .eq('description', `Saldo Inicial Definido (${selectedCurrency})`)
+        .gte('date', startOfMonth)
+        .lte('date', endOfMonth);
 
+      // 2. Insere o valor exato como "Saldo Inicial Definido"
+      // Categoria 'Ajuste' para facilitar filtragem no Financeiro
       const { error } = await supabase.from('transactions').insert([{
-        description: `Fechamento de Caixa (${selectedCurrency})`,
+        description: `Saldo Inicial Definido (${selectedCurrency})`,
         amount: targetValue,
-        type: 'income', 
+        type: 'income', // Entra como crédito para compor o saldo
         currency: selectedCurrency, 
-        category: 'Ajuste',
+        category: 'Ajuste', 
         classification: 'fixo',
         status: 'done',
-        date: adjustmentDate.toISOString(),
-        notes: 'Valor real em caixa definido manualmente pelo usuário'
+        date: startOfMonth, // Salva no dia 1
+        notes: 'Valor definido manualmente pelo usuário como ponto de partida'
       }]);
 
       if (error) throw error;
-      toast({ title: "Caixa Definido", description: `Saldo final de ${selectedCurrency} fixado em ${formatCurrency(targetValue, selectedCurrency)}` });
+      
+      toast({ title: "Saldo Definido", description: `Mês inicia com ${formatCurrency(targetValue, selectedCurrency)}.` });
       setIsBalanceModalOpen(false);
       setNewInitialBalance('');
       calculateDre();
@@ -313,7 +296,6 @@ export default function DrePage() {
     }
   }
 
-  // Função dedicada para buscar a taxa do mês específico
   const fetchTaxRateForMonth = async () => {
     try {
       const monthKey = `${selectedMonth}-${selectedYear}`;
@@ -353,7 +335,6 @@ export default function DrePage() {
       );
   }
 
-  // ... (Resto do Render igual, sem alterações visuais necessárias)
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
       <Sidebar />
@@ -501,17 +482,16 @@ export default function DrePage() {
            <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border shadow-2xl">
               <h2 className="text-xl font-bold mb-4 dark:text-white">Ajustar Saldo {selectedCurrency}</h2>
               <p className="text-sm text-slate-500 mb-4">
-                Digite o valor exato que você tem no banco agora. 
-                Isso definirá o Saldo Final deste mês e o Inicial do próximo.
+                Digite o valor que você tinha em caixa no <strong>INÍCIO</strong> deste mês (ou que você tem agora e quer considerar como ponto de partida). 
               </p>
               <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-medium text-slate-400">Saldo Real ({selectedCurrency})</label>
+                    <label className="text-xs font-medium text-slate-400">Valor de Abertura ({selectedCurrency})</label>
                     <Input placeholder="0,00" value={newInitialBalance} onChange={e => setNewInitialBalance(e.target.value)} className="mt-1" />
                   </div>
                   <div className="flex gap-2">
                       <Button variant="ghost" className="flex-1" onClick={() => setIsBalanceModalOpen(false)}>Cancelar</Button>
-                      <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={handleUpdateBalance} disabled={isSubmittingBalance}>
+                      <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={handleUpdateBalance} disabled={isSubmittingBalance}>
                           {isSubmittingBalance ? <Loader2 className="animate-spin h-4 w-4" /> : 'Confirmar Saldo'}
                       </Button>
                   </div>
