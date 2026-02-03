@@ -52,7 +52,6 @@ export class AnalyticsService {
     const prevStartDate = new Date(prevEndDate.getTime() - duration);
     const prevData = await this.getPeriodData(clientId, { startDate: prevStartDate, endDate: prevEndDate });
 
-    // Fee Manual (vem do banco)
     const rawInputCurrent: RawMetricsInput = {
       ...currentData,
       creativeCost: 0, softwareCost: 0, otherCosts: 0,
@@ -73,7 +72,6 @@ export class AnalyticsService {
         return ((curr - prev) / prev) * 100;
     };
 
-    // Retorna TODAS as métricas para o Dashboard Rico
     return {
       period: range,
       raw: rawInputCurrent,
@@ -99,28 +97,24 @@ export class AnalyticsService {
     };
   }
 
-  // --- Lógica de Gráficos (MANTIDA) ---
   async getHistoryChart(clientId: string, range: DateRange, groupBy: 'day' | 'week' | 'month' = 'day') {
     const dailyData = await prisma.funnel_data.groupBy({
       by: ['date'],
       where: {
-        cohorts: { client_id: clientId },
+        ...(clientId ? { cohorts: { client_id: clientId } } : {}),
         date: { gte: range.startDate, lte: range.endDate }
       },
       _sum: { revenue: true, leads: true }
     });
 
     if (groupBy === 'day') {
-        return dailyData.map(day => {
-            const d = new Date(day.date);
-            return {
-                date: d.toISOString(),
-                shortDate: d.toISOString().split('T')[0],
-                humanDate: format(d, 'dd/MM'),
-                revenue: Number(day._sum.revenue || 0),
-                leads: day._sum.leads || 0
-            };
-        }).sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        return dailyData.map(day => ({
+            date: day.date.toISOString(),
+            shortDate: day.date.toISOString().split('T')[0],
+            humanDate: format(day.date, 'dd/MM'),
+            revenue: Number(day._sum.revenue || 0),
+            leads: day._sum.leads || 0
+        })).sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     }
 
     const groupedMap = new Map<string, { revenue: number, leads: number, dateSort: Date }>();
@@ -153,36 +147,74 @@ export class AnalyticsService {
         .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
 
-  // --- Dashboard Geral ---
-  async getGeneralPerformance(range: DateRange) {
-      // (Lógica inalterada para o Dashboard Geral, mantendo a consistência)
-      // ... (código existente que já mandei anteriormente)
-      // Vou incluir apenas para garantir que não quebre, mas o foco é o individual
-      const clients = await prisma.clients.findMany({ where: { status: 'active' }, select: { id: true, margin_percent: true } });
-      let totalRevenue = 0, totalInvested = 0, totalGrossProfit = 0, totalLeads = 0, totalSales = 0, totalImpressions = 0, totalClicks = 0;
+  // --- Dashboard Geral de Performance GM ---
+async getGeneralPerformance(range: DateRange) {
+      // 1. Busca todos os clientes ativos para calcular o Fee consolidado
+      const allActiveClients = await prisma.clients.findMany({ 
+        where: { status: 'active' }, 
+        select: { id: true, value: true, margin_percent: true } 
+      });
+      
+      // Como a coluna 'currency' não existe no banco, consideramos que os valores 
+      // cadastrados no campo 'value' já são a base para o faturamento em BRL.
+      const totalAgenciesMonthlyFee = allActiveClients.reduce((acc, c) => acc + Number(c.value || 0), 0);
 
-      for (const client of clients) {
-          const funnel = await prisma.funnel_data.aggregate({ where: { cohorts: { client_id: client.id }, date: { gte: range.startDate, lte: range.endDate } }, _sum: { revenue: true, leads: true, sales: true, impressions: true, clicks: true } });
-          const costs = await prisma.marketing_costs.aggregate({ where: { client_id: client.id, date: { gte: range.startDate, lte: range.endDate } }, _sum: { ad_spend: true, agency_fee: true } });
-          const revenue = Number(funnel._sum.revenue || 0);
-          const invested = Number(costs._sum.ad_spend || 0) + Number(costs._sum.agency_fee || 0);
-          const margin = Number(client.margin_percent || 0);
-          totalRevenue += revenue; totalInvested += invested; totalGrossProfit += (revenue * margin);
-          totalLeads += Number(funnel._sum.leads || 0); totalSales += Number(funnel._sum.sales || 0); totalImpressions += Number(funnel._sum.impressions || 0); totalClicks += Number(funnel._sum.clicks || 0);
+      // 2. Busca performance de Ads de todos os clientes no período
+      const funnel = await prisma.funnel_data.aggregate({ 
+        where: { date: { gte: range.startDate, lte: range.endDate } }, 
+        _sum: { revenue: true, leads: true, sales: true, impressions: true, clicks: true } 
+      });
+
+      const costs = await prisma.marketing_costs.aggregate({ 
+        where: { date: { gte: range.startDate, lte: range.endDate } }, 
+        _sum: { ad_spend: true } 
+      });
+
+      const revenueTotal = Number(funnel._sum.revenue || 0);
+      const adSpendTotal = Number(costs._sum.ad_spend || 0);
+
+      // Investimento Total = Soma de Ads + Fees Fixos dos Clientes
+      const totalInvested = adSpendTotal + totalAgenciesMonthlyFee;
+
+      // Cálculo de Lucro Líquido ponderado pela margem de cada cliente
+      let totalGrossProfit = 0;
+      for (const client of allActiveClients) {
+          const clientRev = await prisma.funnel_data.aggregate({
+              where: { 
+                cohorts: { client_id: client.id }, 
+                date: { gte: range.startDate, lte: range.endDate } 
+              },
+              _sum: { revenue: true }
+          });
+          totalGrossProfit += (Number(clientRev._sum.revenue || 0) * Number(client.margin_percent || 0));
       }
+
       const totalNetProfit = totalGrossProfit - totalInvested;
-      const generalRoi = totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : 0;
-      const generalRoas = totalInvested > 0 ? totalRevenue / totalInvested : 0;
-      const generalCac = totalSales > 0 ? totalInvested / totalSales : 0;
-      const generalTicket = totalSales > 0 ? totalRevenue / totalSales : 0;
-      const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
-      const convLead = totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0;
-      const convSales = totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0;
 
       return {
-          financial: { revenue: totalRevenue, invested: totalInvested, netProfit: totalNetProfit, roi: generalRoi, roas: generalRoas, cac: generalCac, ticket: generalTicket },
-          funnel: { impressions: totalImpressions, clicks: totalClicks, leads: totalLeads, sales: totalSales, cpl: totalLeads > 0 ? totalInvested / totalLeads : 0, ctr, convLead, convSales }
+          financial: { 
+            revenue: revenueTotal, 
+            invested: totalInvested, 
+            netProfit: totalNetProfit, 
+            roi: totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : 0, 
+            roas: adSpendTotal > 0 ? revenueTotal / adSpendTotal : 0, 
+            cac: Number(funnel._sum.sales || 0) > 0 ? totalInvested / Number(funnel._sum.sales) : 0, 
+            ticket: Number(funnel._sum.sales || 0) > 0 ? revenueTotal / Number(funnel._sum.sales) : 0 
+          },
+          funnel: { 
+            impressions: Number(funnel._sum.impressions || 0), 
+            clicks: Number(funnel._sum.clicks || 0), 
+            leads: Number(funnel._sum.leads || 0), 
+            sales: Number(funnel._sum.sales || 0), 
+            cpl: Number(funnel._sum.leads || 0) > 0 ? totalInvested / Number(funnel._sum.leads) : 0, 
+            ctr: Number(funnel._sum.impressions || 0) > 0 ? (Number(funnel._sum.clicks || 0) / Number(funnel._sum.impressions)) * 100 : 0, 
+            convLead: Number(funnel._sum.clicks || 0) > 0 ? (Number(funnel._sum.leads || 0) / Number(funnel._sum.clicks)) * 100 : 0, 
+            convSales: Number(funnel._sum.leads || 0) > 0 ? (Number(funnel._sum.sales || 0) / Number(funnel._sum.leads)) * 100 : 0 
+          }
       };
   }
-  async getGeneralHistory(range: DateRange, groupBy: 'day' | 'week' | 'month' = 'day') { return this.getHistoryChart('', range, groupBy); } // Reusa lógica
+
+  async getGeneralHistory(range: DateRange, groupBy: 'day' | 'week' | 'month' = 'day') { 
+    return this.getHistoryChart('', range, groupBy); 
+  }
 }

@@ -7,7 +7,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  Loader2, TrendingUp, TrendingDown, DollarSign, Users, Target, MousePointer, Wallet, BarChart3, Filter, Calendar, Building2
+  Loader2, TrendingUp, DollarSign, Users, Target, Wallet, BarChart3, Filter, Calendar, Building2
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
@@ -30,7 +30,6 @@ export default function GeneralOverviewPage() {
   const [timeRange, setTimeRange] = useState("30");
   const [chartGrouping, setChartGrouping] = useState<'day' | 'week' | 'month'>('day');
   
-  // Datas Customizadas (Iniciando com o mês atual)
   const [customStart, setCustomStart] = useState(() => {
       const date = new Date();
       date.setDate(date.getDate() - 30);
@@ -38,7 +37,6 @@ export default function GeneralOverviewPage() {
   }); 
   const [customEnd, setCustomEnd] = useState(new Date().toISOString().split('T')[0]);
 
-  // Função para obter parâmetros de data de forma estável
   const fetchOverviewData = useCallback(async () => {
     setLoading(true);
     try {
@@ -48,7 +46,7 @@ export default function GeneralOverviewPage() {
         if (timeRange === 'custom') {
             if (!customStart || !customEnd) {
                 setLoading(false);
-                return; // Aguarda o usuário preencher
+                return;
             }
             startQuery = customStart;
             endQuery = customEnd;
@@ -71,8 +69,7 @@ export default function GeneralOverviewPage() {
         const json = await res.json();
         setData(json);
     } catch (error) {
-        console.error("Erro Fatal Overview:", error);
-        // Em caso de erro, seta dados zerados para não quebrar a UI
+        console.error("Erro Overview Performance GM:", error);
         setData({
             report: {
                 financial: { revenue: 0, invested: 0, netProfit: 0, roi: 0, roas: 0, cac: 0, ticket: 0 },
@@ -85,7 +82,6 @@ export default function GeneralOverviewPage() {
     }
   }, [timeRange, chartGrouping, customStart, customEnd]);
 
-  // Efeito único para disparar a busca
   useEffect(() => {
     fetchOverviewData();
   }, [fetchOverviewData]);
@@ -98,18 +94,15 @@ export default function GeneralOverviewPage() {
         
         <main className="flex-1 overflow-y-auto p-6 space-y-6">
             
-            {/* CABEÇALHO DA PÁGINA */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                        <Building2 className="h-6 w-6 text-blue-600"/> Visão Geral da Agência
+                        <Building2 className="h-6 w-6 text-blue-600"/> Visão Geral de Performance GM
                     </h1>
-                    <p className="text-slate-500 text-sm mt-1">Dados consolidados de todos os clientes ativos.</p>
+                    <p className="text-slate-500 text-sm mt-1">Soma Automática: Mídia Paga + Fees de Clientes Ativos (BRL).</p>
                 </div>
 
-                {/* FILTROS */}
                 <div className="flex flex-col md:flex-row items-center gap-3 mt-4 md:mt-0">
-                    {/* Filtro Data */}
                     <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
                         <Calendar className="h-4 w-4 text-slate-600"/>
                         <select 
@@ -122,7 +115,6 @@ export default function GeneralOverviewPage() {
                             <option value="custom">Selecionar Período...</option>
                         </select>
                     </div>
-                    {/* Inputs Customizados - Aparecem só se selecionar 'Custom' */}
                     {timeRange === 'custom' && (
                         <div className="flex items-center gap-2 animate-in fade-in">
                             <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2 py-1.5 border rounded text-xs" />
@@ -130,7 +122,6 @@ export default function GeneralOverviewPage() {
                             <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="px-2 py-1.5 border rounded text-xs" />
                         </div>
                     )}
-                    {/* Agrupamento Gráfico */}
                     <div className="flex bg-slate-100 p-1 rounded-lg">
                         {(['day', 'week', 'month'] as const).map((mode) => (
                             <button key={mode} onClick={() => setChartGrouping(mode)} className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${chartGrouping === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
@@ -146,50 +137,43 @@ export default function GeneralOverviewPage() {
             ) : (
                 <div className="space-y-6 animate-in fade-in duration-500">
                     
-                    {/* KPI CARDS (GERAL) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                         <KPICard title="Receita Total" value={formatCurrency(data.report.financial.revenue)} icon={<TrendingUp className="h-4 w-4 text-green-600" />} />
-                        <KPICard title="Investimento Total" value={formatCurrency(data.report.financial.invested)} icon={<Wallet className="h-4 w-4 text-orange-600" />} invertGrowth description="Ads + Fee Agência" />
-                        
                         <KPICard 
-                            title="Lucro Líquido Global" 
+                          title="Investimento Total" 
+                          value={formatCurrency(data.report.financial.invested)} 
+                          icon={<Wallet className="h-4 w-4 text-orange-600" />} 
+                          description="Mídia (Ads) + Fees Agência" 
+                        />
+                        <KPICard 
+                            title="Lucro Líquido" 
                             value={formatCurrency(data.report.financial.netProfit)} 
                             icon={<DollarSign className={`h-4 w-4 ${data.report.financial.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`} />}
                             valueColor={data.report.financial.netProfit >= 0 ? 'text-green-700' : 'text-red-700'}
                             description="Soma dos lucros reais dos clientes"
                         />
-                        
                         <KPICard title="ROAS Médio" value={`${(data.report.financial.roas || 0).toFixed(2)}x`} icon={<BarChart3 className="h-4 w-4 text-blue-600" />} valueColor="text-blue-700" />
-                        
-                        <KPICard 
-                            title="ROI Global (x)" 
-                            value={`${((data.report.financial.roi || 0) / 100).toFixed(2)}x`} 
-                            icon={<Target className="h-4 w-4 text-purple-600" />}
-                            valueColor={data.report.financial.roi > 0 ? 'text-purple-700' : 'text-red-700'}
-                            description="Retorno sobre Investimento Total"
-                        />
+                        <KPICard title="ROI Global" value={`${((data.report.financial.roi || 0) / 100).toFixed(2)}x`} icon={<Target className="h-4 w-4 text-purple-600" />} valueColor="text-purple-700" />
                     </div>
 
-                    {/* FUNIL CONSOLIDADO */}
                     <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
                         <div className="p-6">
-                            <h3 className="text-sm font-bold text-slate-700 mb-6 flex items-center gap-2"><Filter className="h-4 w-4"/> Funil Agregado (Todos os Clientes)</h3>
+                            <h3 className="text-sm font-bold text-slate-700 mb-6 flex items-center gap-2"><Filter className="h-4 w-4"/> Funil Agregado Performance GM</h3>
                             <div className="flex flex-col items-center justify-center space-y-1 max-w-2xl mx-auto">
-                                <PyramidLevel label="Impressões Totais" value={formatNumber(data.report.funnel.impressions)} width="w-[100%]" color="bg-blue-50 border-blue-200 text-blue-800" />
-                                <PyramidConnector label="CTR Médio" value={`${(data.report.funnel.ctr || 0).toFixed(2)}%`} />
-                                <PyramidLevel label="Cliques Totais" value={formatNumber(data.report.funnel.clicks)} width="w-[85%]" color="bg-indigo-50 border-indigo-200 text-indigo-900" />
+                                <PyramidLevel label="Impressões" value={formatNumber(data.report.funnel.impressions)} width="w-[100%]" color="bg-blue-50 border-blue-200 text-blue-800" />
+                                <PyramidConnector label="CTR" value={`${(data.report.funnel.ctr || 0).toFixed(2)}%`} />
+                                <PyramidLevel label="Cliques" value={formatNumber(data.report.funnel.clicks)} width="w-[85%]" color="bg-indigo-50 border-indigo-200 text-indigo-900" />
                                 <PyramidConnector label="Conv. Lead" value={`${(data.report.funnel.convLead || 0).toFixed(2)}%`} />
-                                <PyramidLevel label="Leads Totais" value={formatNumber(data.report.funnel.leads)} width="w-[70%]" color="bg-purple-50 border-purple-200 text-purple-800" />
+                                <PyramidLevel label="Leads" value={formatNumber(data.report.funnel.leads)} width="w-[70%]" color="bg-purple-50 border-purple-200 text-purple-800" />
                                 <PyramidConnector label="Fechamento" value={`${(data.report.funnel.convSales || 0).toFixed(2)}%`} />
-                                <PyramidLevel label="Vendas Totais" value={formatNumber(data.report.funnel.sales)} width="w-[55%]" color="bg-emerald-100 border-emerald-300 text-emerald-900" />
+                                <PyramidLevel label="Vendas" value={formatNumber(data.report.funnel.sales)} width="w-[55%]" color="bg-emerald-100 border-emerald-300 text-emerald-900" />
                             </div>
                         </div>
                     </Card>
 
-                    {/* GRÁFICOS */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div className="p-6 bg-white rounded-xl border shadow-sm">
-                            <div className="flex justify-between items-center mb-6"><h3 className="text-sm font-semibold text-gray-500 uppercase">Crescimento de Receita (Agência)</h3></div>
+                            <h3 className="text-sm font-semibold text-gray-500 uppercase mb-6">Crescimento de Receita</h3>
                             <div className="h-[300px]">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={data.history}>
@@ -203,7 +187,7 @@ export default function GeneralOverviewPage() {
                             </div>
                         </div>
                         <div className="p-6 bg-white rounded-xl border shadow-sm">
-                            <div className="flex justify-between items-center mb-6"><h3 className="text-sm font-semibold text-gray-500 uppercase">Volume de Leads (Agência)</h3></div>
+                            <h3 className="text-sm font-semibold text-gray-500 uppercase mb-6">Volume de Leads</h3>
                             <div className="h-[300px]">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={data.history}>
@@ -217,23 +201,6 @@ export default function GeneralOverviewPage() {
                             </div>
                         </div>
                     </div>
-
-                    {/* UNIT ECONOMICS MÉDIOS */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-white p-5 rounded-xl border shadow-sm space-y-4">
-                            <h4 className="flex items-center gap-2 font-semibold text-gray-700"><Users className="h-4 w-4" /> Performance Média de Conversão</h4>
-                            <MetricRow label="Custo por Lead (CPL Médio)" value={formatCurrency(data.report.funnel.cpl)} highlight />
-                            <MetricRow label="Taxa de Lead (Média)" value={formatPercent(data.report.funnel.convLead)} />
-                            <MetricRow label="Taxa de Fechamento (Média)" value={formatPercent(data.report.funnel.convSales)} />
-                        </div>
-                        <div className="bg-white p-5 rounded-xl border shadow-sm space-y-4">
-                            <h4 className="flex items-center gap-2 font-semibold text-gray-700"><DollarSign className="h-4 w-4" /> Performance Média Financeira</h4>
-                            <MetricRow label="Ticket Médio Geral" value={formatCurrency(data.report.financial.ticket)} />
-                            <MetricRow label="CAC Geral (Custo Aquisição)" value={formatCurrency(data.report.financial.cac)} highlight />
-                            <MetricRow label="Total Vendas Realizadas" value={formatNumber(data.report.funnel.sales)} />
-                        </div>
-                    </div>
-
                 </div>
             )}
         </main>
@@ -242,7 +209,7 @@ export default function GeneralOverviewPage() {
   );
 }
 
-// --- COMPONENTES AUXILIARES ---
+// --- COMPONENTES AUXILIARES (MOVIDOS PARA FORA PARA CORREÇÃO DO ERRO) ---
 function KPICard({ title, value, icon, valueColor = "text-gray-900", description }: any) {
     return (
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -252,6 +219,25 @@ function KPICard({ title, value, icon, valueColor = "text-gray-900", description
       </div>
     );
 }
-function PyramidLevel({ label, value, width, color }: any) { return (<div className={`${width} relative group transition-all duration-500`}><div className={`flex justify-between items-center px-4 py-3 rounded-lg border-2 ${color} shadow-sm relative z-10`}><span className="font-bold text-xs uppercase tracking-wider opacity-80">{label}</span><div className="flex items-center gap-2"><span className="font-bold text-lg">{value}</span></div></div></div>)}
-function PyramidConnector({ label, value }: any) { return (<div className="h-8 flex items-center justify-center relative w-full"><div className="h-full w-0.5 bg-slate-200 absolute top-0"></div><div className="z-10 bg-white border border-slate-200 px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-500 shadow-sm flex gap-1"><span>{label}: {value}</span></div></div>)}
-function MetricRow({ label, value, highlight }: any) { return (<div className="flex justify-between items-center py-2 border-b border-dashed border-gray-100 last:border-0"><span className="text-sm text-gray-500">{label}</span><span className={`text-sm font-medium ${highlight ? 'text-blue-600 bg-blue-50 px-2 py-0.5 rounded' : 'text-gray-900'}`}>{value}</span></div>); }
+
+function PyramidLevel({ label, value, width, color }: any) { 
+  return (
+    <div className={`${width} relative group transition-all duration-500`}>
+      <div className={`flex justify-between items-center px-4 py-3 rounded-lg border-2 ${color} shadow-sm relative z-10`}>
+        <span className="font-bold text-xs uppercase tracking-wider opacity-80">{label}</span>
+        <div className="flex items-center gap-2"><span className="font-bold text-lg">{value}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function PyramidConnector({ label, value }: any) { 
+  return (
+    <div className="h-8 flex items-center justify-center relative w-full">
+      <div className="h-full w-0.5 bg-slate-200 absolute top-0"></div>
+      <div className="z-10 bg-white border border-slate-200 px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-500 shadow-sm flex gap-1">
+        <span>{label}: {value}</span>
+      </div>
+    </div>
+  );
+}
