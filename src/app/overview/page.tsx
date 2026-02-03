@@ -61,15 +61,12 @@ export default function GeneralOverviewPage() {
         const query = `start=${startQuery}&end=${endQuery}&groupBy=${chartGrouping}`;
         const res = await fetch(`/api/analytics/general?${query}`);
         
-        if (!res.ok) {
-            const text = await res.text();
-            throw new Error(text || 'Erro ao buscar dados');
-        }
+        if (!res.ok) throw new Error('Erro ao buscar dados');
 
         const json = await res.json();
         setData(json);
     } catch (error) {
-        console.error("Erro Overview Performance GM:", error);
+        console.error("Erro Fatal Overview:", error);
         setData({
             report: {
                 financial: { revenue: 0, invested: 0, netProfit: 0, roi: 0, roas: 0, cac: 0, ticket: 0 },
@@ -94,6 +91,7 @@ export default function GeneralOverviewPage() {
         
         <main className="flex-1 overflow-y-auto p-6 space-y-6">
             
+            {/* CABEÇALHO DA PÁGINA */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -137,6 +135,7 @@ export default function GeneralOverviewPage() {
             ) : (
                 <div className="space-y-6 animate-in fade-in duration-500">
                     
+                    {/* KPI CARDS */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                         <KPICard title="Receita Total" value={formatCurrency(data.report.financial.revenue)} icon={<TrendingUp className="h-4 w-4 text-green-600" />} />
                         <KPICard 
@@ -156,6 +155,7 @@ export default function GeneralOverviewPage() {
                         <KPICard title="ROI Global" value={`${((data.report.financial.roi || 0) / 100).toFixed(2)}x`} icon={<Target className="h-4 w-4 text-purple-600" />} valueColor="text-purple-700" />
                     </div>
 
+                    {/* FUNIL CONSOLIDADO */}
                     <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
                         <div className="p-6">
                             <h3 className="text-sm font-bold text-slate-700 mb-6 flex items-center gap-2"><Filter className="h-4 w-4"/> Funil Agregado Performance GM</h3>
@@ -209,13 +209,13 @@ export default function GeneralOverviewPage() {
   );
 }
 
-// --- COMPONENTES AUXILIARES (MOVIDOS PARA FORA PARA CORREÇÃO DO ERRO) ---
+// --- COMPONENTES AUXILIARES ---
 function KPICard({ title, value, icon, valueColor = "text-gray-900", description }: any) {
     return (
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex justify-between items-start mb-2"><h3 className="text-sm font-medium text-slate-500">{title}</h3><div className="p-2 bg-slate-50 rounded-lg">{icon}</div></div>
         <div className={`text-2xl font-bold ${valueColor} mb-1`}>{value}</div>
-        {description && <p className="text-xs text-slate-400 mt-1">{description}</p>}
+        {description && <p className="text-xs text-slate-400 mt-1 uppercase font-bold">{description}</p>}
       </div>
     );
 }

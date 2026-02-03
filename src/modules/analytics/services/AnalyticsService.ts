@@ -147,19 +147,16 @@ export class AnalyticsService {
         .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
 
-  // --- Dashboard Geral de Performance GM ---
-async getGeneralPerformance(range: DateRange) {
-      // 1. Busca todos os clientes ativos para calcular o Fee consolidado
+  async getGeneralPerformance(range: DateRange) {
+      // 1. Busca todos os clientes ativos para somar o Fee consolidado (faturamento bruto GM)
       const allActiveClients = await prisma.clients.findMany({ 
         where: { status: 'active' }, 
         select: { id: true, value: true, margin_percent: true } 
       });
       
-      // Como a coluna 'currency' não existe no banco, consideramos que os valores 
-      // cadastrados no campo 'value' já são a base para o faturamento em BRL.
       const totalAgenciesMonthlyFee = allActiveClients.reduce((acc, c) => acc + Number(c.value || 0), 0);
 
-      // 2. Busca performance de Ads de todos os clientes no período
+      // 2. Busca performance de Ads agregada
       const funnel = await prisma.funnel_data.aggregate({ 
         where: { date: { gte: range.startDate, lte: range.endDate } }, 
         _sum: { revenue: true, leads: true, sales: true, impressions: true, clicks: true } 
@@ -173,20 +170,17 @@ async getGeneralPerformance(range: DateRange) {
       const revenueTotal = Number(funnel._sum.revenue || 0);
       const adSpendTotal = Number(costs._sum.ad_spend || 0);
 
-      // Investimento Total = Soma de Ads + Fees Fixos dos Clientes
+      // Investimento Total = Soma de Mídia Paga (Ads) + Fees Fixos mensais dos Clientes
       const totalInvested = adSpendTotal + totalAgenciesMonthlyFee;
 
-      // Cálculo de Lucro Líquido ponderado pela margem de cada cliente
+      // Lucro Líquido baseado na margem individual de cada cliente
       let totalGrossProfit = 0;
       for (const client of allActiveClients) {
           const clientRev = await prisma.funnel_data.aggregate({
-              where: { 
-                cohorts: { client_id: client.id }, 
-                date: { gte: range.startDate, lte: range.endDate } 
-              },
+              where: { cohorts: { client_id: client.id }, date: { gte: range.startDate, lte: range.endDate } },
               _sum: { revenue: true }
           });
-          totalGrossProfit += (Number(clientRev._sum.revenue || 0) * Number(client.margin_percent || 0));
+          totalGrossProfit += (Number(clientRev._sum.revenue || 0) * (Number(client.margin_percent || 0) / 100));
       }
 
       const totalNetProfit = totalGrossProfit - totalInvested;
