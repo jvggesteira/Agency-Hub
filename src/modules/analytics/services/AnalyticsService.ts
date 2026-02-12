@@ -147,8 +147,10 @@ export class AnalyticsService {
         .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
 
+  // --- Dashboard Geral de Performance GM ---
   async getGeneralPerformance(range: DateRange) {
-      // 1. Busca todos os clientes ativos para somar o Fee consolidado (faturamento bruto GM)
+      // 1. Busca todos os clientes ativos para somar o Fee consolidado (SNAPSHOT)
+      // Ajuste: Removido filtro de 'currency' para evitar erro caso a coluna não exista na sua versão atual do Prisma
       const allActiveClients = await prisma.clients.findMany({ 
         where: { status: 'active' }, 
         select: { id: true, value: true, margin_percent: true } 
@@ -156,7 +158,7 @@ export class AnalyticsService {
       
       const totalAgenciesMonthlyFee = allActiveClients.reduce((acc, c) => acc + Number(c.value || 0), 0);
 
-      // 2. Busca performance de Ads agregada
+      // 2. Busca performance agregada no banco
       const funnel = await prisma.funnel_data.aggregate({ 
         where: { date: { gte: range.startDate, lte: range.endDate } }, 
         _sum: { revenue: true, leads: true, sales: true, impressions: true, clicks: true } 
@@ -170,10 +172,10 @@ export class AnalyticsService {
       const revenueTotal = Number(funnel._sum.revenue || 0);
       const adSpendTotal = Number(costs._sum.ad_spend || 0);
 
-      // Investimento Total = Soma de Mídia Paga (Ads) + Fees Fixos mensais dos Clientes
+      // Investimento Total = Soma de Mídia Paga (Ads) + Fees Fixos Consolidados
       const totalInvested = adSpendTotal + totalAgenciesMonthlyFee;
 
-      // Lucro Líquido baseado na margem individual de cada cliente
+      // Cálculo de Lucro Líquido ponderado (Baseado na margem definida em cada cliente)
       let totalGrossProfit = 0;
       for (const client of allActiveClients) {
           const clientRev = await prisma.funnel_data.aggregate({
@@ -183,7 +185,14 @@ export class AnalyticsService {
           totalGrossProfit += (Number(clientRev._sum.revenue || 0) * (Number(client.margin_percent || 0) / 100));
       }
 
+      // Lucro Líquido = Receita Ponderada pela Margem - Investimento (Ads+Fee)
       const totalNetProfit = totalGrossProfit - totalInvested;
+
+      // Cálculos de Conversão
+      const totalImpressions = Number(funnel._sum.impressions || 0);
+      const totalClicks = Number(funnel._sum.clicks || 0);
+      const totalLeads = Number(funnel._sum.leads || 0);
+      const totalSales = Number(funnel._sum.sales || 0);
 
       return {
           financial: { 
@@ -192,18 +201,18 @@ export class AnalyticsService {
             netProfit: totalNetProfit, 
             roi: totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : 0, 
             roas: adSpendTotal > 0 ? revenueTotal / adSpendTotal : 0, 
-            cac: Number(funnel._sum.sales || 0) > 0 ? totalInvested / Number(funnel._sum.sales) : 0, 
-            ticket: Number(funnel._sum.sales || 0) > 0 ? revenueTotal / Number(funnel._sum.sales) : 0 
+            cac: totalSales > 0 ? totalInvested / totalSales : 0, 
+            ticket: totalSales > 0 ? revenueTotal / totalSales : 0 
           },
           funnel: { 
-            impressions: Number(funnel._sum.impressions || 0), 
-            clicks: Number(funnel._sum.clicks || 0), 
-            leads: Number(funnel._sum.leads || 0), 
-            sales: Number(funnel._sum.sales || 0), 
-            cpl: Number(funnel._sum.leads || 0) > 0 ? totalInvested / Number(funnel._sum.leads) : 0, 
-            ctr: Number(funnel._sum.impressions || 0) > 0 ? (Number(funnel._sum.clicks || 0) / Number(funnel._sum.impressions)) * 100 : 0, 
-            convLead: Number(funnel._sum.clicks || 0) > 0 ? (Number(funnel._sum.leads || 0) / Number(funnel._sum.clicks)) * 100 : 0, 
-            convSales: Number(funnel._sum.leads || 0) > 0 ? (Number(funnel._sum.sales || 0) / Number(funnel._sum.leads)) * 100 : 0 
+            impressions: totalImpressions, 
+            clicks: totalClicks, 
+            leads: totalLeads, 
+            sales: totalSales, 
+            cpl: totalLeads > 0 ? totalInvested / totalLeads : 0, 
+            ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
+            convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
+            convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
           }
       };
   }
