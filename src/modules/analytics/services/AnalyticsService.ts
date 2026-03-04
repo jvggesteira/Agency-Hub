@@ -155,55 +155,56 @@ export class AnalyticsService {
     select: { id: true, value: true, margin_percent: true } 
   });
 
-  // Inicializadores dos acumuladores
+  // Inicializadores para a SOMA TOTAL
   let totalRevenue = 0;
-  let totalAdSpend = 0;
-  let totalAgencyFees = 0; // Soma dos Fees mensais que a agência recebe
-  let totalNetProfit = 0;
+  let totalInvestedSum = 0; // SOMA de todos os investimentos individuais
+  let totalNetProfitSum = 0; // SOMA de todos os lucros líquidos individuais
   let totalSales = 0;
   let totalLeads = 0;
   let totalClicks = 0;
   let totalImpressions = 0;
+  let totalAdSpendOnly = 0;
 
-  // 2. Loop Processador: Calcula a performance real de cada cliente individualmente
-  // Isso garante que a regra de negócio do metrics-engine.ts seja respeitada
+  // 2. Loop para SOMAR os resultados de cada cliente
   for (const client of allActiveClients) {
     const data = await this.getPeriodData(client.id, range);
     
-    // Alinha com a lógica do seu metrics-engine.ts
+    // Monta o input exatamente como o metrics-engine espera
     const rawInput: RawMetricsInput = {
       ...data,
       creativeCost: 0, 
       softwareCost: 0, 
       otherCosts: 0,
-      marginPercent: Number(client.margin_percent || 0) / 100 // Converte 20 para 0.20
+      agencyFee: Number(client.value || 0), // O Fee entra aqui para o cálculo individual
+      marginPercent: Number(client.margin_percent || 0) / 100
     };
 
-    // Usamos o seu motor oficial para calcular o lucro desse cliente específico
+    // CHAMA O SEU MOTOR DE MÉTRICAS (O mesmo da aba Performance)
     const metrics = calculateMetrics(rawInput);
 
-    // Acumulando os totais para a Visão Geral
+    // APENAS SOMA OS RESULTADOS FINAIS
     totalRevenue += data.revenue;
-    totalAdSpend += data.adSpend;
-    totalAgencyFees += Number(client.value || 0); // O Fee fixo que o cliente paga
-    totalNetProfit += metrics.financial.netProfit; // O lucro real calculado pelo motor
+    totalAdSpendOnly += data.adSpend;
+    totalInvestedSum += metrics.financial.totalCost; // Soma o investimento real (Ads + Fee + Outros)
+    totalNetProfitSum += metrics.financial.netProfit; // Soma o lucro líquido real de cada um
+    
     totalSales += data.sales;
     totalLeads += data.leads;
     totalClicks += data.clicks;
     totalImpressions += data.impressions;
   }
 
-  // Investimento Total na visão da Agência = Gasto em Ads + Fees recebidos
-  const totalInvested = totalAdSpend + totalAgencyFees;
-
+  // 3. Retorna o consolidado baseado nas SOMAS
   return {
     financial: { 
       revenue: totalRevenue, 
-      invested: totalInvested, 
-      netProfit: totalNetProfit, 
-      roi: totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : 0, 
-      roas: totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0, 
-      cac: totalSales > 0 ? totalInvested / totalSales : 0, 
+      invested: totalInvestedSum, 
+      netProfit: totalNetProfitSum, 
+      // ROI Geral baseado na soma das partes
+      roi: totalInvestedSum > 0 ? (totalNetProfitSum / totalInvestedSum) * 100 : 0, 
+      // ROAS Geral (Receita total / Gasto total em Ads)
+      roas: totalAdSpendOnly > 0 ? totalRevenue / totalAdSpendOnly : 0, 
+      cac: totalSales > 0 ? totalInvestedSum / totalSales : 0, 
       ticket: totalSales > 0 ? totalRevenue / totalSales : 0 
     },
     funnel: { 
@@ -211,7 +212,7 @@ export class AnalyticsService {
       clicks: totalClicks, 
       leads: totalLeads, 
       sales: totalSales, 
-      cpl: totalLeads > 0 ? totalInvested / totalLeads : 0, 
+      cpl: totalLeads > 0 ? totalInvestedSum / totalLeads : 0, 
       ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
       convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
       convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
