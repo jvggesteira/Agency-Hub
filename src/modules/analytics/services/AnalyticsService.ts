@@ -149,73 +149,62 @@ export class AnalyticsService {
 
   // --- Dashboard Geral de Performance GM ---
   async getGeneralPerformance(range: DateRange) {
-  // 1. Busca dados básicos em paralelo para performance
-  const [allActiveClients, funnel, costs] = await Promise.all([
-    prisma.clients.findMany({ 
-      where: { status: 'active' }, 
-      select: { id: true, value: true, margin_percent: true } 
-    }),
-    prisma.funnel_data.aggregate({ 
-      where: { date: { gte: range.startDate, lte: range.endDate } }, 
-      _sum: { revenue: true, leads: true, sales: true, impressions: true, clicks: true } 
-    }),
-    prisma.marketing_costs.aggregate({ 
-      where: { date: { gte: range.startDate, lte: range.endDate } }, 
-      _sum: { ad_spend: true } 
-    })
-  ]);
+  // 1. Busca todos os clientes ativos
+  const allActiveClients = await prisma.clients.findMany({ 
+    where: { status: 'active' }, 
+    select: { id: true, value: true, margin_percent: true } 
+  });
 
-  const revenueTotal = Number(funnel._sum.revenue || 0);
-  const adSpendTotal = Number(costs._sum.ad_spend || 0);
-  
-  // Soma dos Fees Fixos (Faturamento da Agência)
-  const totalAgenciesMonthlyFee = allActiveClients.reduce((acc, c) => acc + Number(c.value || 0), 0);
-
-  // Investimento Total (O que foi gasto para gerar a receita)
-  const totalInvested = adSpendTotal + totalAgenciesMonthlyFee;
-
-  // 2. CÁLCULO DO LUCRO LÍQUIDO REAL
-  // Lucro Líquido = Receita Total - Custos de Ads - Fees da Agência
-  // Se houver uma margem operacional adicional (margin_percent), aplicamos ela sobre o saldo.
+  // Inicializadores dos acumuladores
+  let totalRevenue = 0;
+  let totalAdSpend = 0;
+  let totalAgencyFees = 0; // Soma dos Fees mensais que a agência recebe
   let totalNetProfit = 0;
+  let totalSales = 0;
+  let totalLeads = 0;
+  let totalClicks = 0;
+  let totalImpressions = 0;
 
+  // 2. Loop Processador: Calcula a performance real de cada cliente individualmente
+  // Isso garante que a regra de negócio do metrics-engine.ts seja respeitada
   for (const client of allActiveClients) {
-    const clientRev = await prisma.funnel_data.aggregate({
-      where: { cohorts: { client_id: client.id }, date: { gte: range.startDate, lte: range.endDate } },
-      _sum: { revenue: true }
-    });
+    const data = await this.getPeriodData(client.id, range);
+    
+    // Alinha com a lógica do seu metrics-engine.ts
+    const rawInput: RawMetricsInput = {
+      ...data,
+      creativeCost: 0, 
+      softwareCost: 0, 
+      otherCosts: 0,
+      marginPercent: Number(client.margin_percent || 0) / 100 // Converte 20 para 0.20
+    };
 
-    const clientAds = await prisma.marketing_costs.aggregate({
-      where: { client_id: client.id, date: { gte: range.startDate, lte: range.endDate } },
-      _sum: { ad_spend: true }
-    });
+    // Usamos o seu motor oficial para calcular o lucro desse cliente específico
+    const metrics = calculateMetrics(rawInput);
 
-    const rev = Number(clientRev._sum.revenue || 0);
-    const ads = Number(clientAds._sum.ad_spend || 0);
-    const fee = Number(client.value || 0);
-    const margin = Number(client.margin_percent || 0) / 100;
-
-    // Se a margem for 0, assumimos que o lucro é apenas Receita - Gastos
-    // Se a margem for > 0, ela representa quanto sobra após custos extras de produto/operação
-    const clientProfitBase = rev - ads - fee;
-    totalNetProfit += margin > 0 ? clientProfitBase * margin : clientProfitBase;
+    // Acumulando os totais para a Visão Geral
+    totalRevenue += data.revenue;
+    totalAdSpend += data.adSpend;
+    totalAgencyFees += Number(client.value || 0); // O Fee fixo que o cliente paga
+    totalNetProfit += metrics.financial.netProfit; // O lucro real calculado pelo motor
+    totalSales += data.sales;
+    totalLeads += data.leads;
+    totalClicks += data.clicks;
+    totalImpressions += data.impressions;
   }
 
-  // Cálculos de Conversão
-  const totalSales = Number(funnel._sum.sales || 0);
-  const totalLeads = Number(funnel._sum.leads || 0);
-  const totalClicks = Number(funnel._sum.clicks || 0);
-  const totalImpressions = Number(funnel._sum.impressions || 0);
+  // Investimento Total na visão da Agência = Gasto em Ads + Fees recebidos
+  const totalInvested = totalAdSpend + totalAgencyFees;
 
   return {
     financial: { 
-      revenue: revenueTotal, 
+      revenue: totalRevenue, 
       invested: totalInvested, 
       netProfit: totalNetProfit, 
       roi: totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : 0, 
-      roas: adSpendTotal > 0 ? revenueTotal / adSpendTotal : 0, 
+      roas: totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0, 
       cac: totalSales > 0 ? totalInvested / totalSales : 0, 
-      ticket: totalSales > 0 ? revenueTotal / totalSales : 0 
+      ticket: totalSales > 0 ? totalRevenue / totalSales : 0 
     },
     funnel: { 
       impressions: totalImpressions, 
