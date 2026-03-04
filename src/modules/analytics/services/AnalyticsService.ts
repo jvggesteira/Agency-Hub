@@ -149,44 +149,41 @@ export class AnalyticsService {
 
   // --- Dashboard Geral de Performance GM ---
   async getGeneralPerformance(range: DateRange) {
-  const allActiveClients = await prisma.clients.findMany({ 
-    where: { status: 'active' }, 
-    select: { id: true, value: true, margin_percent: true } 
+  // 1. Busca todos os clientes (sem filtro de status para garantir que nada fique de fora)
+  const allClients = await prisma.clients.findMany({ 
+    select: { id: true, value: true, margin_percent: true, name: true } 
   });
 
   let totalRevenue = 0;
-  let totalAdSpend = 0;
-  let totalFees = 0;
+  let totalInvestedSum = 0;
   let totalNetProfitSum = 0;
   let totalSales = 0;
   let totalLeads = 0;
   let totalClicks = 0;
   let totalImpressions = 0;
 
-  for (const client of allActiveClients) {
+  for (const client of allClients) {
     const data = await this.getPeriodData(client.id, range);
     
-    // Ignora clientes sem movimentação no período para não poluir com Fees vazios
-    if (data.revenue === 0 && data.adSpend === 0) continue;
+    // Removemos o "continue" para garantir que qualquer dado, por menor que seja, entre na conta
+    const rawInput: RawMetricsInput = {
+      ...data,
+      creativeCost: 0,
+      softwareCost: 0,
+      otherCosts: 0,
+      agencyFee: Number(client.value || 0),
+      // Forçamos a margem para 1 (100%) se o seu objetivo é que o valor 
+      // inserido na performance seja considerado o lucro direto.
+      marginPercent: Number(client.margin_percent || 0) > 0 ? Number(client.margin_percent) / 100 : 1
+    };
 
-    const rev = data.revenue;
-    const ads = data.adSpend;
-    const fee = Number(client.value || 0);
-    const margin = Number(client.margin_percent || 0) / 100;
+    // Usamos o motor apenas para extrair os resultados formatados
+    const metrics = calculateMetrics(rawInput);
 
-    // CÁLCULO DE LUCRO UNITÁRIO (Lógica à prova de falhas)
-    // 1. Primeiro calculamos o saldo real: Receita - Mídia - Fee
-    const operationalBalance = rev - ads - fee;
-
-    // 2. Se houver margem (ex: 20%), aplicamos sobre a receita. 
-    // Se a margem for 0 ou vazia, o lucro é o saldo operacional total.
-    const clientNetProfit = margin > 0 ? (rev * margin) - ads - fee : operationalBalance;
-
-    // ACUMULADORES
-    totalRevenue += rev;
-    totalAdSpend += ads;
-    totalFees += fee;
-    totalNetProfitSum += clientNetProfit;
+    // SOMA SIMPLES DOS RESULTADOS INDIVIDUAIS
+    totalRevenue += data.revenue;
+    totalInvestedSum += metrics.financial.totalCost;
+    totalNetProfitSum += metrics.financial.netProfit;
     
     totalSales += data.sales;
     totalLeads += data.leads;
@@ -194,17 +191,14 @@ export class AnalyticsService {
     totalImpressions += data.impressions;
   }
 
-  // O Investimento Total para o ROI é a soma de Ads + Fees
-  const totalInvested = totalAdSpend + totalFees;
-
   return {
     financial: { 
       revenue: totalRevenue, 
-      invested: totalInvested, 
+      invested: totalInvestedSum, 
       netProfit: totalNetProfitSum, 
-      roi: totalInvested > 0 ? (totalNetProfitSum / totalInvested) * 100 : 0, 
-      roas: totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0, 
-      cac: totalSales > 0 ? totalInvested / totalSales : 0, 
+      roi: totalInvestedSum > 0 ? (totalNetProfitSum / totalInvestedSum) * 100 : 0, 
+      roas: (totalInvestedSum - totalNetProfitSum) > 0 ? totalRevenue / (totalInvestedSum - totalNetProfitSum) : 0, 
+      cac: totalSales > 0 ? totalInvestedSum / totalSales : 0, 
       ticket: totalSales > 0 ? totalRevenue / totalSales : 0 
     },
     funnel: { 
@@ -212,7 +206,7 @@ export class AnalyticsService {
       clicks: totalClicks, 
       leads: totalLeads, 
       sales: totalSales, 
-      cpl: totalLeads > 0 ? totalInvested / totalLeads : 0, 
+      cpl: totalLeads > 0 ? totalInvestedSum / totalLeads : 0, 
       ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
       convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
       convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
