@@ -149,44 +149,44 @@ export class AnalyticsService {
 
   // --- Dashboard Geral de Performance GM ---
   async getGeneralPerformance(range: DateRange) {
-  // 1. Busca todos os clientes ativos
   const allActiveClients = await prisma.clients.findMany({ 
     where: { status: 'active' }, 
     select: { id: true, value: true, margin_percent: true } 
   });
 
-  // Inicializadores para a SOMA TOTAL
   let totalRevenue = 0;
-  let totalInvestedSum = 0; // SOMA de todos os investimentos individuais
-  let totalNetProfitSum = 0; // SOMA de todos os lucros líquidos individuais
+  let totalAdSpend = 0;
+  let totalFees = 0;
+  let totalNetProfitSum = 0;
   let totalSales = 0;
   let totalLeads = 0;
   let totalClicks = 0;
   let totalImpressions = 0;
-  let totalAdSpendOnly = 0;
 
-  // 2. Loop para SOMAR os resultados de cada cliente
   for (const client of allActiveClients) {
     const data = await this.getPeriodData(client.id, range);
     
-    // Monta o input exatamente como o metrics-engine espera
-    const rawInput: RawMetricsInput = {
-      ...data,
-      creativeCost: 0, 
-      softwareCost: 0, 
-      otherCosts: 0,
-      agencyFee: Number(client.value || 0), // O Fee entra aqui para o cálculo individual
-      marginPercent: Number(client.margin_percent || 0) / 100
-    };
+    // Ignora clientes sem movimentação no período para não poluir com Fees vazios
+    if (data.revenue === 0 && data.adSpend === 0) continue;
 
-    // CHAMA O SEU MOTOR DE MÉTRICAS (O mesmo da aba Performance)
-    const metrics = calculateMetrics(rawInput);
+    const rev = data.revenue;
+    const ads = data.adSpend;
+    const fee = Number(client.value || 0);
+    const margin = Number(client.margin_percent || 0) / 100;
 
-    // APENAS SOMA OS RESULTADOS FINAIS
-    totalRevenue += data.revenue;
-    totalAdSpendOnly += data.adSpend;
-    totalInvestedSum += metrics.financial.totalCost; // Soma o investimento real (Ads + Fee + Outros)
-    totalNetProfitSum += metrics.financial.netProfit; // Soma o lucro líquido real de cada um
+    // CÁLCULO DE LUCRO UNITÁRIO (Lógica à prova de falhas)
+    // 1. Primeiro calculamos o saldo real: Receita - Mídia - Fee
+    const operationalBalance = rev - ads - fee;
+
+    // 2. Se houver margem (ex: 20%), aplicamos sobre a receita. 
+    // Se a margem for 0 ou vazia, o lucro é o saldo operacional total.
+    const clientNetProfit = margin > 0 ? (rev * margin) - ads - fee : operationalBalance;
+
+    // ACUMULADORES
+    totalRevenue += rev;
+    totalAdSpend += ads;
+    totalFees += fee;
+    totalNetProfitSum += clientNetProfit;
     
     totalSales += data.sales;
     totalLeads += data.leads;
@@ -194,17 +194,17 @@ export class AnalyticsService {
     totalImpressions += data.impressions;
   }
 
-  // 3. Retorna o consolidado baseado nas SOMAS
+  // O Investimento Total para o ROI é a soma de Ads + Fees
+  const totalInvested = totalAdSpend + totalFees;
+
   return {
     financial: { 
       revenue: totalRevenue, 
-      invested: totalInvestedSum, 
+      invested: totalInvested, 
       netProfit: totalNetProfitSum, 
-      // ROI Geral baseado na soma das partes
-      roi: totalInvestedSum > 0 ? (totalNetProfitSum / totalInvestedSum) * 100 : 0, 
-      // ROAS Geral (Receita total / Gasto total em Ads)
-      roas: totalAdSpendOnly > 0 ? totalRevenue / totalAdSpendOnly : 0, 
-      cac: totalSales > 0 ? totalInvestedSum / totalSales : 0, 
+      roi: totalInvested > 0 ? (totalNetProfitSum / totalInvested) * 100 : 0, 
+      roas: totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0, 
+      cac: totalSales > 0 ? totalInvested / totalSales : 0, 
       ticket: totalSales > 0 ? totalRevenue / totalSales : 0 
     },
     funnel: { 
@@ -212,7 +212,7 @@ export class AnalyticsService {
       clicks: totalClicks, 
       leads: totalLeads, 
       sales: totalSales, 
-      cpl: totalLeads > 0 ? totalInvestedSum / totalLeads : 0, 
+      cpl: totalLeads > 0 ? totalInvested / totalLeads : 0, 
       ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
       convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
       convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
