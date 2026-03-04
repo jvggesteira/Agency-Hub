@@ -149,70 +149,74 @@ export class AnalyticsService {
 
   // --- Dashboard Geral de Performance GM ---
   async getGeneralPerformance(range: DateRange) {
-  // 1. Busca todos os clientes (sem filtro de status para garantir que nada fique de fora)
-  const allClients = await prisma.clients.findMany({ 
-    select: { id: true, value: true, margin_percent: true, name: true } 
-  });
+      // Puxamos todos os clientes ativos
+      const allActiveClients = await prisma.clients.findMany({ 
+        where: { status: 'active' }, 
+        select: { id: true, margin_percent: true } 
+      });
 
-  let totalRevenue = 0;
-  let totalInvestedSum = 0;
-  let totalNetProfitSum = 0;
-  let totalSales = 0;
-  let totalLeads = 0;
-  let totalClicks = 0;
-  let totalImpressions = 0;
+      let totalRevenue = 0;
+      let totalInvestedSum = 0;
+      let totalNetProfitSum = 0;
+      let totalSales = 0;
+      let totalLeads = 0;
+      let totalClicks = 0;
+      let totalImpressions = 0;
 
-  for (const client of allClients) {
-    const data = await this.getPeriodData(client.id, range);
-    
-    // Removemos o "continue" para garantir que qualquer dado, por menor que seja, entre na conta
-    const rawInput: RawMetricsInput = {
-      ...data,
-      creativeCost: 0,
-      softwareCost: 0,
-      otherCosts: 0,
-      agencyFee: Number(client.value || 0),
-      // Forçamos a margem para 1 (100%) se o seu objetivo é que o valor 
-      // inserido na performance seja considerado o lucro direto.
-      marginPercent: Number(client.margin_percent || 0) > 0 ? Number(client.margin_percent) / 100 : 1
-    };
+      for (const client of allActiveClients) {
+        // 1. Puxa os dados brutos exatamente como a aba de Performance faz
+        const data = await this.getPeriodData(client.id, range);
+        
+        // Se o cliente não teve cliques, leads ou receita, ignoramos para poupar processamento
+        if (data.revenue === 0 && data.adSpend === 0 && data.leads === 0) continue;
 
-    // Usamos o motor apenas para extrair os resultados formatados
-    const metrics = calculateMetrics(rawInput);
+        // 2. Montamos o input IDENTICO ao getClientPerformance (SEM DIVIDIR POR 100)
+        // O data já contém adSpend, agencyFee, etc., vindos direto do getPeriodData
+        const rawInput: RawMetricsInput = {
+          ...data,
+          creativeCost: 0, 
+          softwareCost: 0, 
+          otherCosts: 0,
+          marginPercent: Number(client.margin_percent || 1) // Se estiver vazio no banco, assume 1 (100%) para não negativar a conta
+        };
 
-    // SOMA SIMPLES DOS RESULTADOS INDIVIDUAIS
-    totalRevenue += data.revenue;
-    totalInvestedSum += metrics.financial.totalCost;
-    totalNetProfitSum += metrics.financial.netProfit;
-    
-    totalSales += data.sales;
-    totalLeads += data.leads;
-    totalClicks += data.clicks;
-    totalImpressions += data.impressions;
+        // 3. Calculamos a performance no motor central
+        const metrics = calculateMetrics(rawInput);
+
+        // 4. Acumulamos apenas os totais absolutos
+        totalRevenue += data.revenue;
+        totalInvestedSum += metrics.financial.totalCost;
+        totalNetProfitSum += metrics.financial.netProfit;
+        
+        totalSales += data.sales;
+        totalLeads += data.leads;
+        totalClicks += data.clicks;
+        totalImpressions += data.impressions;
+      }
+
+      // 5. Retorno do Dashboard Geral
+      return {
+          financial: { 
+            revenue: totalRevenue, 
+            invested: totalInvestedSum, 
+            netProfit: totalNetProfitSum, 
+            roi: totalInvestedSum > 0 ? (totalNetProfitSum / totalInvestedSum) * 100 : 0, 
+            roas: (totalInvestedSum - totalNetProfitSum) > 0 ? totalRevenue / (totalInvestedSum - totalNetProfitSum) : 0, 
+            cac: totalSales > 0 ? totalInvestedSum / totalSales : 0, 
+            ticket: totalSales > 0 ? totalRevenue / totalSales : 0 
+          },
+          funnel: { 
+            impressions: totalImpressions, 
+            clicks: totalClicks, 
+            leads: totalLeads, 
+            sales: totalSales, 
+            cpl: totalLeads > 0 ? totalInvestedSum / totalLeads : 0, 
+            ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
+            convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
+            convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
+          }
+      };
   }
-
-  return {
-    financial: { 
-      revenue: totalRevenue, 
-      invested: totalInvestedSum, 
-      netProfit: totalNetProfitSum, 
-      roi: totalInvestedSum > 0 ? (totalNetProfitSum / totalInvestedSum) * 100 : 0, 
-      roas: (totalInvestedSum - totalNetProfitSum) > 0 ? totalRevenue / (totalInvestedSum - totalNetProfitSum) : 0, 
-      cac: totalSales > 0 ? totalInvestedSum / totalSales : 0, 
-      ticket: totalSales > 0 ? totalRevenue / totalSales : 0 
-    },
-    funnel: { 
-      impressions: totalImpressions, 
-      clicks: totalClicks, 
-      leads: totalLeads, 
-      sales: totalSales, 
-      cpl: totalLeads > 0 ? totalInvestedSum / totalLeads : 0, 
-      ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
-      convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
-      convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
-    }
-  };
-}
 
   async getGeneralHistory(range: DateRange, groupBy: 'day' | 'week' | 'month' = 'day') { 
     return this.getHistoryChart('', range, groupBy); 
