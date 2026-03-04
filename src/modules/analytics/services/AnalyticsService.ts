@@ -149,73 +149,86 @@ export class AnalyticsService {
 
   // --- Dashboard Geral de Performance GM ---
   async getGeneralPerformance(range: DateRange) {
-      // 1. Busca todos os clientes ativos para somar o Fee consolidado (SNAPSHOT)
-      // Ajuste: Removido filtro de 'currency' para evitar erro caso a coluna não exista na sua versão atual do Prisma
-      const allActiveClients = await prisma.clients.findMany({ 
-        where: { status: 'active' }, 
-        select: { id: true, value: true, margin_percent: true } 
-      });
-      
-      const totalAgenciesMonthlyFee = allActiveClients.reduce((acc, c) => acc + Number(c.value || 0), 0);
+  // 1. Busca dados básicos em paralelo para performance
+  const [allActiveClients, funnel, costs] = await Promise.all([
+    prisma.clients.findMany({ 
+      where: { status: 'active' }, 
+      select: { id: true, value: true, margin_percent: true } 
+    }),
+    prisma.funnel_data.aggregate({ 
+      where: { date: { gte: range.startDate, lte: range.endDate } }, 
+      _sum: { revenue: true, leads: true, sales: true, impressions: true, clicks: true } 
+    }),
+    prisma.marketing_costs.aggregate({ 
+      where: { date: { gte: range.startDate, lte: range.endDate } }, 
+      _sum: { ad_spend: true } 
+    })
+  ]);
 
-      // 2. Busca performance agregada no banco
-      const funnel = await prisma.funnel_data.aggregate({ 
-        where: { date: { gte: range.startDate, lte: range.endDate } }, 
-        _sum: { revenue: true, leads: true, sales: true, impressions: true, clicks: true } 
-      });
+  const revenueTotal = Number(funnel._sum.revenue || 0);
+  const adSpendTotal = Number(costs._sum.ad_spend || 0);
+  
+  // Soma dos Fees Fixos (Faturamento da Agência)
+  const totalAgenciesMonthlyFee = allActiveClients.reduce((acc, c) => acc + Number(c.value || 0), 0);
 
-      const costs = await prisma.marketing_costs.aggregate({ 
-        where: { date: { gte: range.startDate, lte: range.endDate } }, 
-        _sum: { ad_spend: true } 
-      });
+  // Investimento Total (O que foi gasto para gerar a receita)
+  const totalInvested = adSpendTotal + totalAgenciesMonthlyFee;
 
-      const revenueTotal = Number(funnel._sum.revenue || 0);
-      const adSpendTotal = Number(costs._sum.ad_spend || 0);
+  // 2. CÁLCULO DO LUCRO LÍQUIDO REAL
+  // Lucro Líquido = Receita Total - Custos de Ads - Fees da Agência
+  // Se houver uma margem operacional adicional (margin_percent), aplicamos ela sobre o saldo.
+  let totalNetProfit = 0;
 
-      // Investimento Total = Soma de Mídia Paga (Ads) + Fees Fixos Consolidados
-      const totalInvested = adSpendTotal + totalAgenciesMonthlyFee;
+  for (const client of allActiveClients) {
+    const clientRev = await prisma.funnel_data.aggregate({
+      where: { cohorts: { client_id: client.id }, date: { gte: range.startDate, lte: range.endDate } },
+      _sum: { revenue: true }
+    });
 
-      // Cálculo de Lucro Líquido ponderado (Baseado na margem definida em cada cliente)
-      let totalGrossProfit = 0;
-      for (const client of allActiveClients) {
-          const clientRev = await prisma.funnel_data.aggregate({
-              where: { cohorts: { client_id: client.id }, date: { gte: range.startDate, lte: range.endDate } },
-              _sum: { revenue: true }
-          });
-          totalGrossProfit += (Number(clientRev._sum.revenue || 0) * (Number(client.margin_percent || 0) / 100));
-      }
+    const clientAds = await prisma.marketing_costs.aggregate({
+      where: { client_id: client.id, date: { gte: range.startDate, lte: range.endDate } },
+      _sum: { ad_spend: true }
+    });
 
-      // Lucro Líquido = Receita Ponderada pela Margem - Investimento (Ads+Fee)
-      const totalNetProfit = totalGrossProfit - totalInvested;
+    const rev = Number(clientRev._sum.revenue || 0);
+    const ads = Number(clientAds._sum.ad_spend || 0);
+    const fee = Number(client.value || 0);
+    const margin = Number(client.margin_percent || 0) / 100;
 
-      // Cálculos de Conversão
-      const totalImpressions = Number(funnel._sum.impressions || 0);
-      const totalClicks = Number(funnel._sum.clicks || 0);
-      const totalLeads = Number(funnel._sum.leads || 0);
-      const totalSales = Number(funnel._sum.sales || 0);
-
-      return {
-          financial: { 
-            revenue: revenueTotal, 
-            invested: totalInvested, 
-            netProfit: totalNetProfit, 
-            roi: totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : 0, 
-            roas: adSpendTotal > 0 ? revenueTotal / adSpendTotal : 0, 
-            cac: totalSales > 0 ? totalInvested / totalSales : 0, 
-            ticket: totalSales > 0 ? revenueTotal / totalSales : 0 
-          },
-          funnel: { 
-            impressions: totalImpressions, 
-            clicks: totalClicks, 
-            leads: totalLeads, 
-            sales: totalSales, 
-            cpl: totalLeads > 0 ? totalInvested / totalLeads : 0, 
-            ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
-            convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
-            convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
-          }
-      };
+    // Se a margem for 0, assumimos que o lucro é apenas Receita - Gastos
+    // Se a margem for > 0, ela representa quanto sobra após custos extras de produto/operação
+    const clientProfitBase = rev - ads - fee;
+    totalNetProfit += margin > 0 ? clientProfitBase * margin : clientProfitBase;
   }
+
+  // Cálculos de Conversão
+  const totalSales = Number(funnel._sum.sales || 0);
+  const totalLeads = Number(funnel._sum.leads || 0);
+  const totalClicks = Number(funnel._sum.clicks || 0);
+  const totalImpressions = Number(funnel._sum.impressions || 0);
+
+  return {
+    financial: { 
+      revenue: revenueTotal, 
+      invested: totalInvested, 
+      netProfit: totalNetProfit, 
+      roi: totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : 0, 
+      roas: adSpendTotal > 0 ? revenueTotal / adSpendTotal : 0, 
+      cac: totalSales > 0 ? totalInvested / totalSales : 0, 
+      ticket: totalSales > 0 ? revenueTotal / totalSales : 0 
+    },
+    funnel: { 
+      impressions: totalImpressions, 
+      clicks: totalClicks, 
+      leads: totalLeads, 
+      sales: totalSales, 
+      cpl: totalLeads > 0 ? totalInvested / totalLeads : 0, 
+      ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0, 
+      convLead: totalClicks > 0 ? (totalLeads / totalClicks) * 100 : 0, 
+      convSales: totalLeads > 0 ? (totalSales / totalLeads) * 100 : 0 
+    }
+  };
+}
 
   async getGeneralHistory(range: DateRange, groupBy: 'day' | 'week' | 'month' = 'day') { 
     return this.getHistoryChart('', range, groupBy); 
