@@ -45,7 +45,7 @@ export default function GoalsPage() {
 
   if (!can('goals', 'view')) {
     return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+      <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header />
@@ -189,7 +189,7 @@ export default function GoalsPage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -199,8 +199,8 @@ export default function GoalsPage() {
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Metas</h1>
-                <p className="text-slate-600 dark:text-slate-400 mt-1">Defina e acompanhe objetivos mensais</p>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Metas</h1>
+                <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Defina e acompanhe objetivos mensais</p>
               </div>
               <button
                 onClick={() => {
@@ -208,7 +208,7 @@ export default function GoalsPage() {
                   reset();
                   setIsModalOpen(true);
                 }}
-                className="bg-slate-900 text-white px-6 py-3 rounded-lg font-medium hover:shadow-lg transition-all flex items-center gap-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 px-6 py-3 font-medium transition-all flex items-center gap-2"
               >
                 <Plus className="h-5 w-5" />
                 Nova Meta
@@ -216,7 +216,7 @@ export default function GoalsPage() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-colors">
+          <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6 transition-colors">
             <div className="flex items-center gap-4 mb-6">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400" />
@@ -225,12 +225,12 @@ export default function GoalsPage() {
                   placeholder="Buscar metas..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:placeholder-slate-500"
+                  className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:placeholder-slate-500"
                 />
               </div>
               <button 
                 onClick={() => setIsFilterModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300"
+                className="flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-white/10 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300"
               >
                 <Filter className="h-5 w-5 text-slate-600" />
                 Filtros
@@ -239,7 +239,7 @@ export default function GoalsPage() {
 
             {loading ? (
               <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
                 <p className="text-slate-600 dark:text-slate-400 mt-4">Carregando metas...</p>
               </div>
             ) : filteredGoals.length === 0 ? (
@@ -255,7 +255,7 @@ export default function GoalsPage() {
                     reset();
                     setIsModalOpen(true);
                   }}
-                  className="bg-slate-900 text-white px-6 py-3 rounded-lg font-medium hover:shadow-lg transition-all inline-flex items-center gap-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                  className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 px-6 py-3 font-medium transition-all inline-flex items-center gap-2"
                 >
                   <Plus className="h-5 w-5" />
                   Criar Meta
@@ -267,7 +267,7 @@ export default function GoalsPage() {
                   const progress = calculateProgress(goal.currentValue, goal.targetValue);
                   const clientName = getClientName(goal.clientId);
                   return (
-                    <div key={goal.id} className="bg-slate-50 dark:bg-slate-950 rounded-lg p-4 border border-slate-200 dark:border-slate-800 hover:shadow-md transition-all">
+                    <div key={goal.id} className="bg-slate-50 dark:bg-[#0c0a1a] rounded-lg p-4 border border-slate-200/80 dark:border-white/10 hover:shadow-md transition-all">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
@@ -334,8 +334,8 @@ export default function GoalsPage() {
 
       {/* Modal Meta (Criação/Edição) */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-800">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-md">
+          <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-slate-200/80 dark:border-white/10">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
@@ -354,7 +354,7 @@ export default function GoalsPage() {
                   <input
                     {...register('title')}
                     type="text"
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
                     placeholder="Ex: Meta de conversões"
                   />
                   {errors.title && (
@@ -368,7 +368,7 @@ export default function GoalsPage() {
                   </label>
                   <select
                     {...register('clientId')}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-[#1a1230]"
                   >
                     <option value="">Selecione um cliente</option>
                     {clients.map(client => (
@@ -387,7 +387,7 @@ export default function GoalsPage() {
                     <input
                       {...register('targetValue')}
                       type="text"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
                       placeholder="1000"
                     />
                     {errors.targetValue && (
@@ -402,7 +402,7 @@ export default function GoalsPage() {
                     <input
                       {...register('currentValue')}
                       type="text"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
                       placeholder="0"
                     />
                   </div>
@@ -415,7 +415,7 @@ export default function GoalsPage() {
                   <input
                     {...register('deadline')}
                     type="date"
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
                   />
                 </div>
 
@@ -426,7 +426,7 @@ export default function GoalsPage() {
                   <textarea
                     {...register('description')}
                     rows={3}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
                     placeholder="Descrição da meta"
                   />
                 </div>
@@ -438,12 +438,12 @@ export default function GoalsPage() {
                   <textarea
                     {...register('notes')}
                     rows={2}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white"
                     placeholder="Observações adicionais"
                   />
                 </div>
 
-                <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-white/[0.06]">
                   <button
                     type="button"
                     onClick={() => {
@@ -451,13 +451,13 @@ export default function GoalsPage() {
                       setEditingGoal(null);
                       reset();
                     }}
-                    className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    className="flex-1 px-4 py-2 border border-slate-300 dark:border-white/10 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-slate-900 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 px-4 py-2 transition-all"
                   >
                     {editingGoal ? 'Atualizar' : 'Salvar'}
                   </button>
@@ -470,8 +470,8 @@ export default function GoalsPage() {
 
       {/* Modal Filtros */}
       {isFilterModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full border border-slate-200 dark:border-slate-800">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-md">
+          <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-md w-full border border-slate-200/80 dark:border-white/10">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Filtrar Metas</h2>
@@ -491,7 +491,7 @@ export default function GoalsPage() {
                   <select
                     value={clientFilter}
                     onChange={(e) => setClientFilter(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-[#1a1230]"
                   >
                     <option value="all">Todos os Clientes</option>
                     {clients.map(client => (
@@ -503,21 +503,21 @@ export default function GoalsPage() {
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-6 border-t border-slate-100 dark:border-slate-800 mt-6">
+              <div className="flex gap-3 pt-6 border-t border-slate-100 dark:border-white/[0.06] mt-6">
                 <button
                   type="button"
                   onClick={() => {
                     setClientFilter('all');
                     setIsFilterModalOpen(false);
                   }}
-                  className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  className="flex-1 px-4 py-2 border border-slate-300 dark:border-white/10 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                 >
                   Limpar Filtros
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsFilterModalOpen(false)}
-                  className="flex-1 bg-slate-900 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 px-4 py-2 transition-all"
                 >
                   Aplicar Filtros
                 </button>

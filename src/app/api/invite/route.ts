@@ -60,7 +60,11 @@ export async function POST(req: Request) {
     });
 
     if (linkError) throw linkError;
-    const actionLink = linkData.properties.action_link;
+
+    // Constrói o link direto para o callback com token_hash + type
+    // Isso evita passar pelo servidor do Supabase (que usa PKCE e falha sem code verifier)
+    const hashedToken = linkData.properties.hashed_token;
+    const actionLink = `${origin}/auth/callback?token_hash=${hashedToken}&type=recovery&next=/update-password`;
 
     // 3. Envia Email
     const transporter = nodemailer.createTransport({

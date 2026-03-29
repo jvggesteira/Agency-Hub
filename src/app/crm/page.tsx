@@ -784,14 +784,14 @@ export default function CRMPage() {
   if (!can('crm', 'view')) return <div className="flex h-screen"><AccessDenied /></div>;
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-6 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Pipeline de Vendas</h1>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Pipeline de Vendas</h1>
               <p className="text-slate-600 dark:text-slate-400 mt-1">Gerencie seus leads de tráfego pago e conversões</p>
               <div className="flex items-center gap-2 mt-2 overflow-x-auto pb-2">
                 {pipelines.map(p => (
@@ -819,7 +819,7 @@ export default function CRMPage() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border dark:border-slate-800 mb-6 flex gap-4 items-center">
+          <div className="bg-white dark:bg-white/[0.04] p-4 rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] mb-6 flex gap-4 items-center">
             <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input placeholder="Buscar por nome, email, telefone..." className="w-full pl-10 pr-4 py-2 border rounded-lg bg-transparent dark:text-white dark:border-slate-700" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
@@ -875,8 +875,8 @@ export default function CRMPage() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full p-6 border dark:border-slate-800 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+           <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-2xl w-full p-6 border border-slate-200 dark:border-white/10 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between mb-4"><h2 className="text-xl font-bold dark:text-white">{editingLead ? 'Editar' : 'Novo'} Lead</h2><button onClick={() => setIsModalOpen(false)}><X/></button></div>
               <form onSubmit={handleSubmit(onModalSubmit)} className="space-y-4">
                 <input type="hidden" {...register('status')} /> 
@@ -977,7 +977,7 @@ export default function CRMPage() {
       {/* MODAL MARCAR COMO PERDIDO */}
       {isLostModalOpen && (
           <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
+              <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-sm w-full p-6 border dark:border-slate-800">
                   <div className="flex items-center gap-3 mb-4 text-red-600">
                       <AlertCircle className="h-6 w-6"/>
                       <h3 className="font-bold text-lg">Marcar como Perdido</h3>
@@ -1000,7 +1000,7 @@ export default function CRMPage() {
       {/* MODAL TRANSFERIR */}
       {isTransferModalOpen && (
           <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
+              <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-sm w-full p-6 border dark:border-slate-800">
                   <h3 className="font-bold mb-4 dark:text-white">Transferir Lead</h3>
                   <div className="space-y-4">
                       <div><label className="text-sm">Funil de Destino</label><select className="w-full p-2 border rounded dark:bg-slate-950" value={transferTargetPipeline} onChange={e => setTransferTargetPipeline(e.target.value)}><option value="">Selecione...</option>{pipelines.filter(p => p.id !== currentPipelineId).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
@@ -1014,8 +1014,8 @@ export default function CRMPage() {
 
       {/* MODAL VENDA REALIZADA */}
       {isWonModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800 shadow-xl animate-in fade-in zoom-in duration-300">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+           <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-sm w-full p-6 border dark:border-slate-800 shadow-xl animate-in fade-in zoom-in duration-300">
               <div className="flex flex-col items-center text-center mb-6">
                   <div className="bg-green-100 dark:bg-green-900/30 p-3 rounded-full mb-4"><CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" /></div>
                   <h2 className="text-xl font-bold dark:text-white">Venda Realizada!</h2>
@@ -1035,7 +1035,7 @@ export default function CRMPage() {
 
       {isPipelineSettingsOpen && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-slate-900 rounded-xl max-w-lg w-full p-6 border dark:border-slate-800 max-h-[80vh] overflow-y-auto">
+              <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-white/10 max-h-[80vh] overflow-y-auto">
                   <div className="flex justify-between mb-4">
                       <h3 className="font-bold dark:text-white">Configurar Pipeline</h3>
                       <button onClick={() => setIsPipelineSettingsOpen(false)}><X/></button>

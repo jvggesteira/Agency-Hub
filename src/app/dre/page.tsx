@@ -329,62 +329,64 @@ export default function DrePage() {
 
   if (authLoading) {
       return (
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 items-center justify-center">
-            <Loader2 className="animate-spin h-10 w-10 text-blue-600"/>
+        <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] items-center justify-center">
+            <Loader2 className="animate-spin h-8 w-8 text-purple-600"/>
         </div>
       );
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
              <div>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">DRE Gerencial</h1>
-                <p className="text-slate-600 dark:text-slate-400 mt-1">Gestão de caixa e resultado em {selectedCurrency === 'BRL' ? 'Reais' : 'Moeda N'}</p>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">DRE Gerencial</h1>
+                <p className="text-slate-500 dark:text-white/40 mt-1 text-sm">Gestão de caixa e resultado em {selectedCurrency === 'BRL' ? 'Reais' : 'Moeda N'}</p>
             </div>
-            <div className="flex flex-wrap gap-2 items-center bg-white dark:bg-slate-900 p-2 rounded-lg border shadow-sm">
-                
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-md mr-2">
-                    <button 
+            <div className="flex flex-wrap gap-2 items-center bg-white dark:bg-white/5 p-2 rounded-xl border border-slate-200/80 dark:border-white/10 shadow-sm">
+
+                <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-lg mr-2">
+                    <button
                       onClick={() => setSelectedCurrency('BRL')}
-                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${selectedCurrency === 'BRL' ? 'bg-white dark:bg-slate-700 shadow-sm text-black dark:text-white' : 'text-slate-500'}`}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${selectedCurrency === 'BRL' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 dark:text-white/40'}`}
                     >R$</button>
-                    <button 
+                    <button
                       onClick={() => setSelectedCurrency('N')}
-                      className={`px-3 py-1 rounded text-xs font-bold transition-all ${selectedCurrency === 'N' ? 'bg-white dark:bg-slate-700 shadow-sm text-black dark:text-white' : 'text-slate-500'}`}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${selectedCurrency === 'N' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 dark:text-white/40'}`}
                     >Moeda N</button>
                 </div>
 
-                <Filter className="h-4 w-4 text-slate-500 ml-2" />
-                <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none border-r pr-2 dark:text-white dark:bg-slate-900 cursor-pointer">
+                <Filter className="h-4 w-4 text-slate-400 dark:text-white/30 ml-2" />
+                <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none border-r border-slate-200 dark:border-white/10 pr-2 dark:text-white/70 cursor-pointer">
                     {Array.from({length: 12}, (_, i) => i + 1).map(m => (
                         <option key={m} value={m}>{new Date(0, m-1).toLocaleString('pt-BR', {month: 'long'})}</option>
                     ))}
                 </select>
-                <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none border-r pr-2 dark:text-white dark:bg-slate-900 cursor-pointer">
+                <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-transparent text-sm font-medium focus:outline-none border-r border-slate-200 dark:border-white/10 pr-2 dark:text-white/70 cursor-pointer">
                     <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option>
                 </select>
-                <Button variant="outline" size="sm" onClick={() => setIsBalanceModalOpen(true)} className="flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-50">
+                <Button variant="outline" size="sm" onClick={() => setIsBalanceModalOpen(true)} className="flex items-center gap-2 border-purple-200 dark:border-purple-500/30 text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 rounded-lg">
                     <Wallet className="h-3 w-3" /> Ajustar Caixa {selectedCurrency}
                 </Button>
-                <button className="bg-slate-900 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-slate-800 ml-2">
+                <button className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-purple-700 ml-2 shadow-sm shadow-purple-600/20">
                     <Download className="h-3 w-3 inline mr-1" /> PDF
                 </button>
             </div>
           </div>
 
           {loading ? (
-             <div className="flex justify-center py-20"><Loader2 className="animate-spin h-10 w-10 text-blue-600"/></div>
+             <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-purple-600"/></div>
           ) : (
             <div className="space-y-6">
-              
-              <div className={`p-6 rounded-xl shadow-lg flex justify-between items-center relative overflow-hidden transition-colors ${dre.finalBalance >= 0 ? 'bg-slate-900 text-white' : 'bg-red-900 text-white'}`}>
+
+              <div className={`p-6 rounded-2xl shadow-lg flex justify-between items-center relative overflow-hidden transition-colors ${dre.finalBalance >= 0 ? 'text-white' : 'bg-red-900 text-white'}`}
+                style={dre.finalBalance >= 0 ? { background: 'linear-gradient(135deg, #1a0a30, #2d1654, #1a0a30)' } : undefined}
+              >
                     <div className="relative z-10">
-                        <p className="text-sm font-medium text-slate-300 mb-1">Saldo Final em Caixa ({selectedCurrency})</p>
+                        <p className="text-sm font-medium text-white/50 mb-1">Saldo Final em Caixa ({selectedCurrency})</p>
                         <h2 className="text-4xl font-bold">{formatCurrency(dre.finalBalance, selectedCurrency)}</h2>
                         <div className="flex items-center gap-4 mt-2">
                             <span className={`text-xs px-2 py-1 rounded ${dre.netProfit >= 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-200'}`}>
@@ -412,8 +414,8 @@ export default function DrePage() {
                     {dre.finalBalance >= 0 ? <TrendingUp className="h-16 w-16 text-white/10 absolute right-4 -bottom-2" /> : <TrendingDown className="h-16 w-16 text-white/10 absolute right-4 -bottom-2" />}
               </div>
 
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 grid grid-cols-12 text-sm font-semibold text-slate-600 dark:text-slate-400">
+              <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] overflow-hidden">
+                 <div className="p-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02] grid grid-cols-12 text-sm font-semibold text-slate-500 dark:text-white/40">
                     <div className="col-span-8">Descrição</div>
                     <div className="col-span-2 text-right">Valor</div>
                     <div className="col-span-2 text-right text-xs">% RB</div>
@@ -466,7 +468,9 @@ export default function DrePage() {
                         <div className="col-span-2 text-right text-sm">{getPercent(dre.netProfit, dre.grossRevenue)}</div>
                     </div>
 
-                    <div className="p-6 grid grid-cols-12 items-center bg-slate-900 dark:bg-white font-black text-white dark:text-slate-900 text-xl shadow-inner">
+                    <div className="p-6 grid grid-cols-12 items-center font-black text-white text-xl shadow-inner"
+                      style={{ background: 'linear-gradient(135deg, #1a0a30, #2d1654, #1a0a30)' }}
+                    >
                         <div className="col-span-8">SALDO FINAL EM CAIXA (Soma Total {selectedCurrency})</div>
                         <div className="col-span-4 text-right">{formatCurrency(dre.finalBalance, selectedCurrency)}</div>
                     </div>
@@ -478,8 +482,8 @@ export default function DrePage() {
       </div>
 
       {isBalanceModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border shadow-2xl">
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+           <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-sm w-full p-6 border border-slate-200 dark:border-white/10 shadow-2xl">
               <h2 className="text-xl font-bold mb-4 dark:text-white">Ajustar Saldo {selectedCurrency}</h2>
               <p className="text-sm text-slate-500 mb-4">
                 Digite o valor que você tinha em caixa no <strong>INÍCIO</strong> deste mês (ou que você tem agora e quer considerar como ponto de partida). 

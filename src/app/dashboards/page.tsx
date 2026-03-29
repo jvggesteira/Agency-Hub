@@ -37,7 +37,7 @@ export default function DashboardsPage() {
   // --- CORREÇÃO: Usando 'dashboards' (plural) conforme definido no use-permission ---
   if (!can('dashboards', 'view')) {
     return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+      <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header />
@@ -81,23 +81,23 @@ export default function DashboardsPage() {
   const getLabel = (type: string) => { switch(type) { case 'meta_ads': return 'Meta Ads'; case 'google_ads': return 'Google Ads'; default: return 'Outra'; }};
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-8 flex justify-between items-center">
-             <div><h1 className="text-3xl font-bold text-slate-900 dark:text-white">Dashboards</h1><p className="text-slate-600 dark:text-slate-400">Integrações de Ads</p></div>
-             <button onClick={() => { setEditingIntegration(null); reset(); setIsModalOpen(true); }} className="bg-slate-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800"><Plus className="h-4 w-4"/> Nova Integração</button>
+             <div><h1 className="text-2xl font-bold text-slate-900 dark:text-white">Dashboards</h1><p className="text-slate-500 dark:text-white/40 text-sm">Integrações de Ads</p></div>
+             <button onClick={() => { setEditingIntegration(null); reset(); setIsModalOpen(true); }} className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 px-4 py-2 flex items-center gap-2"><Plus className="h-4 w-4"/> Nova Integração</button>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+          <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6">
              {loading ? <div className="text-center py-10">Carregando...</div> : integrations.length === 0 ? (
                  <div className="text-center py-10 text-slate-500">Nenhuma integração configurada.</div>
              ) : (
                  <div className="grid gap-4 md:grid-cols-3">
                     {integrations.map(i => (
-                        <div key={i.id} className="border p-4 rounded-lg bg-slate-50 dark:bg-slate-950 dark:border-slate-800">
+                        <div key={i.id} className="border p-4 rounded-lg bg-slate-50 dark:bg-[#0c0a1a] dark:border-white/[0.06]">
                             <div className="flex justify-between mb-2">
                                 <div className="flex gap-2 items-center"><span className="text-xl">{getIcon(i.type)}</span> <span className="font-bold dark:text-white">{i.name}</span></div>
                                 <div className="flex gap-1">
@@ -117,15 +117,15 @@ export default function DashboardsPage() {
       {/* Modal Simplificado para o exemplo */}
       {isModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl w-full max-w-md">
+              <div className="bg-white dark:bg-[#1a1230] p-6 rounded-2xl w-full max-w-md">
                   <h2 className="text-xl font-bold mb-4 dark:text-white">{editingIntegration ? 'Editar' : 'Nova'} Integração</h2>
                   <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                      <input {...register('name')} placeholder="Nome" className="w-full border p-2 rounded dark:bg-slate-950"/>
-                      <select {...register('type')} className="w-full border p-2 rounded dark:bg-slate-950"><option value="meta_ads">Meta Ads</option><option value="google_ads">Google Ads</option><option value="other">Outro</option></select>
-                      <input {...register('api_key')} placeholder="API Key" className="w-full border p-2 rounded dark:bg-slate-950"/>
+                      <input {...register('name')} placeholder="Nome" className="w-full border p-2 rounded dark:bg-[#0c0a1a]"/>
+                      <select {...register('type')} className="w-full border p-2 rounded dark:bg-[#0c0a1a]"><option value="meta_ads">Meta Ads</option><option value="google_ads">Google Ads</option><option value="other">Outro</option></select>
+                      <input {...register('api_key')} placeholder="API Key" className="w-full border p-2 rounded dark:bg-[#0c0a1a]"/>
                       <div className="flex gap-2 pt-2">
                           <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 border p-2 rounded">Cancelar</button>
-                          <button type="submit" className="flex-1 bg-slate-900 text-white p-2 rounded">Salvar</button>
+                          <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 p-2">Salvar</button>
                       </div>
                   </form>
               </div>

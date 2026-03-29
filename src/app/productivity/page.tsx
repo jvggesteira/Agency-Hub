@@ -44,7 +44,7 @@ export default function ProductivityPage() {
 
   if (!can('productivity', 'view')) {
     return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+      <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header />
@@ -168,7 +168,7 @@ export default function ProductivityPage() {
   const priorityOrder: Task['priority'][] = ['alta', 'media', 'baixa'];
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -176,25 +176,25 @@ export default function ProductivityPage() {
         
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Relatórios de Produtividade</h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">Análise de desempenho por colaborador</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Relatórios de Produtividade</h1>
+            <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Análise de desempenho por colaborador</p>
           </div>
 
           {loading ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
               <p className="text-slate-600 dark:text-slate-400 mt-4">Carregando dados de produtividade...</p>
             </div>
           ) : (
             <div className="space-y-8">
               {/* Filters */}
-              <div className="flex gap-4 items-center bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 transition-colors">
+              <div className="flex gap-4 items-center bg-white dark:bg-white/[0.04] p-4 rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] transition-colors">
                 <div className="flex items-center gap-2">
                   <Users className="h-5 w-5 text-slate-600 dark:text-slate-300" />
                   <select
                     value={selectedMember}
                     onChange={(e) => setSelectedMember(e.target.value)}
-                    className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
+                    className="px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-white/[0.04]"
                   >
                     <option value="all">Colaborador: Todos</option>
                     {members.map(member => (
@@ -209,7 +209,7 @@ export default function ProductivityPage() {
                   <select
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                    className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
+                    className="px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-white/[0.04]"
                   >
                     {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
                       <option key={month} value={month}>
@@ -220,7 +220,7 @@ export default function ProductivityPage() {
                   <select
                     value={selectedYear}
                     onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                    className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-slate-900"
+                    className="px-3 py-2 border border-slate-300 dark:border-white/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent dark:text-white dark:bg-white/[0.04]"
                   >
                     {years.map(year => (
                       <option key={year} value={year}>
@@ -233,7 +233,7 @@ export default function ProductivityPage() {
 
               {/* Row 1: Key Metrics */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <Card className="shadow-sm border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.04]">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Total de Tarefas</CardTitle>
                     <Info className="h-4 w-4 text-slate-500 dark:text-slate-400" />
@@ -244,7 +244,7 @@ export default function ProductivityPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <Card className="shadow-sm border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.04]">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Concluídas</CardTitle>
                     <CheckSquare className="h-4 w-4 text-green-600 dark:text-green-400" />
@@ -255,7 +255,7 @@ export default function ProductivityPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <Card className="shadow-sm border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.04]">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Atrasadas</CardTitle>
                     <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
@@ -266,7 +266,7 @@ export default function ProductivityPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <Card className="shadow-sm border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.04]">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-slate-900 dark:text-white">Tempo Médio</CardTitle>
                     <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -280,7 +280,7 @@ export default function ProductivityPage() {
 
               {/* Row 2: Distribution Charts */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <Card className="shadow-sm border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.04]">
                   <CardHeader>
                     <CardTitle className="text-xl font-semibold text-slate-900 dark:text-white">Distribuição por Prioridade</CardTitle>
                     <p className="text-sm text-slate-600 dark:text-slate-400">Tarefas por nível de prioridade</p>
@@ -310,7 +310,7 @@ export default function ProductivityPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <Card className="shadow-sm border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.04]">
                   <CardHeader>
                     <CardTitle className="text-xl font-semibold text-slate-900 dark:text-white">Status das Tarefas</CardTitle>
                     <p className="text-sm text-slate-600 dark:text-slate-400">Distribuição por status</p>
@@ -345,7 +345,7 @@ export default function ProductivityPage() {
               </div>
 
               {/* Row 3: Ranking */}
-              <Card className="shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <Card className="shadow-sm border border-slate-200/80 dark:border-white/[0.06] bg-white dark:bg-white/[0.04]">
                 <CardHeader>
                   <CardTitle className="text-xl font-semibold text-slate-900 dark:text-white">Ranking de Colaboradores</CardTitle>
                   <p className="text-sm text-slate-600 dark:text-slate-400">Desempenho geral de todos os colaboradores</p>

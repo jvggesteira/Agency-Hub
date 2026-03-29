@@ -200,7 +200,7 @@ export default function TeamPage() {
 
   if (!can('team', 'view')) {
       return (
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+        <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
           <Sidebar />
           <div className="flex-1 flex flex-col overflow-hidden">
             <Header />
@@ -211,7 +211,7 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
@@ -219,15 +219,15 @@ export default function TeamPage() {
           
           <div className="max-w-7xl mx-auto">
             <div className="mb-8">
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Gestão de Equipe</h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">Convide membros, defina cargos e gerencie acessos.</p>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Gestão de Equipe</h1>
+              <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Convide membros, defina cargos e gerencie acessos.</p>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
                 
                 {/* COLUNA ESQUERDA: FORMULÁRIO DE CONVITE (Maior parte) */}
                 <div className="xl:col-span-8">
-                    <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+                    <form onSubmit={handleSubmit} className="bg-white dark:bg-white/[0.04] p-8 rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm transition-colors">
                         
                         {/* DADOS BÁSICOS */}
                         <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -236,15 +236,15 @@ export default function TeamPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                           <div className="space-y-2">
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Nome Completo</label>
-                            <Input name="fullName" required placeholder="Ex: João Silva" className="bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700 dark:text-white focus:ring-slate-900 dark:focus:ring-slate-400" />
+                            <Input name="fullName" required placeholder="Ex: João Silva" className="bg-slate-50 dark:bg-[#0c0a1a] border-slate-300 dark:border-white/10 dark:text-white focus:ring-slate-900 dark:focus:ring-slate-400" />
                           </div>
                           <div className="space-y-2">
                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email (Gmail ou Corporativo)</label>
-                            <Input name="email" type="email" required placeholder="joao@agencia.com" className="bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700 dark:text-white focus:ring-slate-900 dark:focus:ring-slate-400" />
+                            <Input name="email" type="email" required placeholder="joao@agencia.com" className="bg-slate-50 dark:bg-[#0c0a1a] border-slate-300 dark:border-white/10 dark:text-white focus:ring-slate-900 dark:focus:ring-slate-400" />
                           </div>
                         </div>
 
-                        <hr className="my-6 border-slate-100 dark:border-slate-800" />
+                        <hr className="my-6 border-slate-100 dark:border-white/[0.06]" />
 
                         {/* ÁREA DE CARGOS PRÉ-DEFINIDOS */}
                         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900/30">
@@ -256,7 +256,7 @@ export default function TeamPage() {
                                     <select 
                                         value={selectedRole} 
                                         onChange={(e) => handleSelectPreset(e.target.value)}
-                                        className="w-full h-10 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full h-10 rounded-md border border-slate-300 dark:border-white/10 bg-white dark:bg-[#0c0a1a] px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         <option value="">Personalizado / Selecione...</option>
                                         {savedRoles.map(role => (
@@ -280,7 +280,7 @@ export default function TeamPage() {
                                                 value={newRoleName}
                                                 onChange={(e) => setNewRoleName(e.target.value)}
                                                 placeholder="Nome do cargo (Ex: Gestor)"
-                                                className="h-10 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 dark:text-white"
+                                                className="h-10 bg-white dark:bg-[#0c0a1a] border-slate-300 dark:border-white/10 dark:text-white"
                                                 autoFocus
                                             />
                                             <Button type="button" onClick={handleSavePreset} className="bg-green-600 hover:bg-green-700 text-white h-10">
@@ -314,7 +314,7 @@ export default function TeamPage() {
                         
                         <div className="space-y-4">
                             {MODULES.map((module) => (
-                                <div key={module.id} className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+                                <div key={module.id} className="p-4 bg-slate-50 dark:bg-[#0c0a1a]/50 rounded-lg border border-slate-100 dark:border-white/[0.06] hover:border-slate-300 dark:hover:border-white/10 transition-colors">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                         <div className="min-w-[200px]">
                                             <span className="font-medium text-slate-900 dark:text-white">{module.label}</span>
@@ -329,8 +329,8 @@ export default function TeamPage() {
                                                     <label key={type} className="flex items-center gap-2 cursor-pointer select-none group">
                                                         <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
                                                             isChecked
-                                                                ? 'bg-slate-900 border-slate-900 dark:bg-white dark:border-white' 
-                                                                : 'bg-white border-gray-300 dark:bg-slate-950 dark:border-slate-600 group-hover:border-slate-400'
+                                                                ? 'bg-purple-600 border-purple-600 dark:bg-purple-600 dark:border-purple-600'
+                                                                : 'bg-white border-gray-300 dark:bg-[#0c0a1a] dark:border-slate-600 group-hover:border-slate-400'
                                                         }`}>
                                                             {isChecked && (
                                                                 <CheckCircle2 className="h-3.5 w-3.5 text-white dark:text-slate-900" />
@@ -354,11 +354,11 @@ export default function TeamPage() {
                             ))}
                         </div>
 
-                        <div className="pt-6 mt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                        <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/[0.06] flex justify-end">
                             <Button 
                                 type="submit" 
                                 disabled={isLoading} 
-                                className="bg-slate-900 hover:bg-slate-800 text-white min-w-[250px] h-12 text-base dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all shadow-lg"
+                                className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 min-w-[250px] h-12 text-base transition-all"
                             >
                                 {isLoading ? (
                                     <><Loader2 className="animate-spin mr-2 h-5 w-5"/> Enviando...</>
@@ -372,8 +372,8 @@ export default function TeamPage() {
 
                 {/* COLUNA DIREITA: LISTA DE MEMBROS (Nova Área) */}
                 <div className="xl:col-span-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm sticky top-6">
-                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                    <div className="bg-white dark:bg-white/[0.04] rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm sticky top-6">
+                        <div className="p-6 border-b border-slate-100 dark:border-white/[0.06] flex justify-between items-center">
                             <h3 className="font-semibold text-lg text-slate-900 dark:text-white flex items-center gap-2">
                                 <Users className="h-5 w-5"/> Membros da Equipe
                             </h3>
@@ -393,7 +393,7 @@ export default function TeamPage() {
                                 </div>
                             ) : (
                                 teamMembers.map(member => (
-                                    <div key={member.id} className="group p-4 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 hover:bg-white dark:hover:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-sm">
+                                    <div key={member.id} className="group p-4 rounded-lg border border-slate-100 dark:border-white/[0.06] bg-slate-50/50 dark:bg-[#0c0a1a]/50 hover:bg-white dark:hover:bg-white/[0.06] hover:border-slate-300 dark:hover:border-white/10 transition-all shadow-sm">
                                         <div className="flex justify-between items-start">
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 mb-1">

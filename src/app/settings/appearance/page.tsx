@@ -13,19 +13,19 @@ export default function AppearanceSettingsPage() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a]">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
+
         <main className="flex-1 overflow-y-auto p-6">
-          
+
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900">Configurações de Aparência</h1>
-            <p className="text-slate-600 mt-1">Personalize o tema e a interface do usuário.</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Configurações de Aparência</h1>
+            <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Personalize o tema e a interface do usuário.</p>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-w-3xl space-y-6">
+          <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6 max-w-3xl space-y-6">
             <h2 className="text-xl font-semibold mb-4">Tema</h2>
             
             <div className="grid grid-cols-2 gap-4">
@@ -38,7 +38,7 @@ export default function AppearanceSettingsPage() {
                 className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                   theme === 'light' 
                   ? 'border-blue-600 ring-4 ring-blue-100' 
-                  : 'border-slate-200 hover:border-slate-300'
+                  : 'border-slate-200/80 dark:border-white/[0.06] hover:border-slate-300'
                 }`}
               >
                 <Sun className="h-6 w-6 text-yellow-500 mb-2" />
@@ -54,7 +54,7 @@ export default function AppearanceSettingsPage() {
                 className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                   theme === 'dark' 
                   ? 'border-blue-600 ring-4 ring-blue-100' 
-                  : 'border-slate-200 hover:border-slate-300'
+                  : 'border-slate-200/80 dark:border-white/[0.06] hover:border-slate-300'
                 }`}
               >
                 <Moon className="h-6 w-6 text-slate-800 mb-2" />
@@ -64,7 +64,7 @@ export default function AppearanceSettingsPage() {
 
             </div>
             
-            <hr className="my-6 border-slate-200" />
+            <hr className="my-6 border-slate-200/80 dark:border-white/[0.06]" />
 
             {/* Seção de Cores Personalizadas (Próximo Passo) */}
             <h2 className="text-xl font-semibold mb-4">Cores da Marca</h2>

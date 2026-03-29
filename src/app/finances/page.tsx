@@ -296,32 +296,32 @@ export default function FinancesPage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Financeiro</h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">Gestão de fluxo de caixa ({viewCurrency === 'BRL' ? 'Reais' : 'Moeda N'})</p>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Financeiro</h1>
+              <p className="text-slate-500 dark:text-white/40 mt-1 text-sm">Gestão de fluxo de caixa ({viewCurrency === 'BRL' ? 'Reais' : 'Moeda N'})</p>
             </div>
             <div className="flex gap-2 flex-wrap items-center">
-                 <div className="flex bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm mr-2">
-                    <button onClick={() => setViewCurrency('BRL')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${viewCurrency === 'BRL' ? 'bg-slate-900 text-white dark:bg-white dark:text-black' : 'text-slate-500'}`}>R$</button>
-                    <button onClick={() => setViewCurrency('N')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${viewCurrency === 'N' ? 'bg-slate-900 text-white dark:bg-white dark:text-black' : 'text-slate-500'}`}>Moeda N</button>
+                 <div className="flex bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200/80 dark:border-white/10 shadow-sm mr-2">
+                    <button onClick={() => setViewCurrency('BRL')} className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${viewCurrency === 'BRL' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 dark:text-white/40'}`}>R$</button>
+                    <button onClick={() => setViewCurrency('N')} className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${viewCurrency === 'N' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 dark:text-white/40'}`}>Moeda N</button>
                  </div>
-                 <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm">
-                    <Calendar className="h-4 w-4 text-slate-500 ml-2" />
-                    <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="bg-transparent text-sm font-medium dark:text-white cursor-pointer focus:outline-none">
+                 <div className="flex items-center gap-2 bg-white dark:bg-white/5 p-1.5 rounded-xl border border-slate-200/80 dark:border-white/10 shadow-sm">
+                    <Calendar className="h-4 w-4 text-slate-400 dark:text-white/30 ml-2" />
+                    <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="bg-transparent text-sm font-medium dark:text-white/70 cursor-pointer focus:outline-none">
                         {months.map((m, i) => <option key={i} value={i}>{m}</option>)}
                     </select>
-                    <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="bg-transparent text-sm font-medium dark:text-white cursor-pointer border-l pl-2 dark:border-slate-700 focus:outline-none">
+                    <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="bg-transparent text-sm font-medium dark:text-white/70 cursor-pointer border-l pl-2 border-slate-200 dark:border-white/10 focus:outline-none">
                         {years.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
                 </div>
                 {can('finance', 'create') && (
-                    <Button onClick={() => { setIsModalOpen(true); setIsCustomCategory(false); setValue('category', ''); }} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 h-10">
+                    <Button onClick={() => { setIsModalOpen(true); setIsCustomCategory(false); setValue('category', ''); }} className="bg-purple-600 hover:bg-purple-700 text-white h-10 rounded-xl shadow-sm shadow-purple-600/20">
                         <Plus className="mr-2 h-4 w-4"/> Novo Lançamento
                     </Button>
                 )}
@@ -329,37 +329,37 @@ export default function FinancesPage() {
           </div>
 
           {loading ? (
-             <div className="flex justify-center py-20"><Loader2 className="animate-spin h-10 w-10 text-blue-600"/></div>
+             <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-purple-600"/></div>
           ) : (
             <>
-              <div className="grid gap-6 md:grid-cols-3 mb-8">
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Receitas (Realizadas)</span><div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg"><TrendingUp className="h-5 w-5 text-green-600" /></div></div>
+              <div className="grid gap-5 md:grid-cols-3 mb-8">
+                <div className="card-hover bg-white dark:bg-white/[0.04] p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06]">
+                    <div className="flex justify-between items-center mb-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Receitas (Realizadas)</span><div className="p-2.5 bg-green-50 dark:bg-green-500/10 rounded-xl"><TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" /></div></div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.income, viewCurrency)}</h2>
                 </div>
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Despesas (Pagas)</span><div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg"><TrendingDown className="h-5 w-5 text-red-600" /></div></div>
+                <div className="card-hover bg-white dark:bg-white/[0.04] p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06]">
+                    <div className="flex justify-between items-center mb-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Despesas (Pagas)</span><div className="p-2.5 bg-red-50 dark:bg-red-500/10 rounded-xl"><TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" /></div></div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(metrics.expenses, viewCurrency)}</h2>
                 </div>
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <div className="flex justify-between items-center mb-4"><span className="text-slate-500 text-sm font-medium">Resultado do Período</span><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg"><DollarSign className="h-5 w-5 text-blue-600" /></div></div>
-                    <h2 className={`text-2xl font-bold ${metrics.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(metrics.balance, viewCurrency)}</h2>
+                <div className="card-hover bg-white dark:bg-white/[0.04] p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06]">
+                    <div className="flex justify-between items-center mb-4"><span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Resultado do Período</span><div className="p-2.5 bg-purple-50 dark:bg-purple-500/10 rounded-xl"><DollarSign className="h-4 w-4 text-purple-600 dark:text-purple-400" /></div></div>
+                    <h2 className={`text-2xl font-bold ${metrics.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(metrics.balance, viewCurrency)}</h2>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col h-[600px]">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] flex flex-col h-[600px]">
+                <div className="p-5 border-b border-slate-100 dark:border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
                   <div className="flex gap-4 items-center w-full">
                         <h3 className="font-bold text-slate-900 dark:text-white whitespace-nowrap">Extrato</h3>
                         <div className="relative w-full max-w-xs">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"/>
-                            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent dark:text-white"/>
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-white/30"/>
+                            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200/80 dark:border-white/10 rounded-xl bg-transparent dark:text-white"/>
                         </div>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Todas</option><option value="income">Receitas</option><option value="expense">Despesas</option></select>
-                        <select value={filterClass} onChange={e => setFilterClass(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700"><option value="all">Class: Tudo</option><option value="fixo">Fixo</option><option value="variavel">Variável</option></select>
-                        <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="text-xs p-2 border rounded bg-transparent dark:text-white dark:border-slate-700">
+                        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="text-xs p-2 border border-slate-200/80 dark:border-white/10 rounded-lg bg-transparent dark:text-white/70"><option value="all">Todas</option><option value="income">Receitas</option><option value="expense">Despesas</option></select>
+                        <select value={filterClass} onChange={e => setFilterClass(e.target.value)} className="text-xs p-2 border border-slate-200/80 dark:border-white/10 rounded-lg bg-transparent dark:text-white/70"><option value="all">Class: Tudo</option><option value="fixo">Fixo</option><option value="variavel">Variável</option></select>
+                        <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="text-xs p-2 border border-slate-200/80 dark:border-white/10 rounded-lg bg-transparent dark:text-white/70">
                             <option value="all">Pagto: Todos</option>
                             <option value="pix">PIX / Transf.</option>
                             <option value="boleto">Boleto</option>
@@ -370,7 +370,7 @@ export default function FinancesPage() {
                 </div>
                 <div className="flex-1 overflow-auto p-0">
                     <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800 sticky top-0">
+                        <thead className="text-xs text-slate-400 dark:text-white/30 uppercase bg-slate-50/80 dark:bg-white/[0.03] sticky top-0">
                             <tr>
                                 <th className="px-6 py-3 w-10">Status</th>
                                 <th className="px-6 py-3">Descrição</th>
@@ -386,7 +386,7 @@ export default function FinancesPage() {
                                 <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500">Nenhum lançamento encontrado.</td></tr>
                             ) : (
                                 filteredTransactions.map((t) => (
-                                    <tr key={t.id} className={`border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 group ${t.status === 'pending' ? 'opacity-70' : ''}`}>
+                                    <tr key={t.id} className={`border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02] group transition-colors ${t.status === 'pending' ? 'opacity-60' : ''}`}>
                                         <td className="px-6 py-4">
                                             <button onClick={(e) => { e.stopPropagation(); toggleStatus(t); }} className={`h-6 w-6 rounded-full flex items-center justify-center border transition-all ${t.status === 'done' ? 'bg-green-500 border-green-500 text-white hover:bg-green-600' : 'bg-transparent border-slate-300 text-transparent hover:border-yellow-500 hover:text-yellow-500'}`} title={t.status === 'done' ? "Pago" : "Pendente"}>
                                                 <CheckCircle2 className="h-4 w-4" />
@@ -425,7 +425,7 @@ export default function FinancesPage() {
                                  ))
                             )}
                         </tbody>
-                        <tfoot className="bg-slate-50 dark:bg-slate-900 font-bold border-t dark:border-slate-800 sticky bottom-0 z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+                        <tfoot className="bg-slate-50/80 dark:bg-white/[0.03] font-bold border-t border-slate-200/80 dark:border-white/5 sticky bottom-0 z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
                             <tr>
                                 <td colSpan={5} className="px-6 py-3 text-right text-slate-600 dark:text-slate-300">Total Filtrado (Realizado):</td>
                                 <td className="px-6 py-3 text-right"><span className={filteredTotals.total >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(filteredTotals.total, viewCurrency)}</span></td>
@@ -441,8 +441,8 @@ export default function FinancesPage() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-           <div className="bg-white dark:bg-slate-900 rounded-xl max-w-md w-full p-6 border dark:border-slate-800 shadow-2xl overflow-y-auto max-h-[90vh]">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+           <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-md w-full p-6 border border-slate-200 dark:border-white/10 shadow-2xl overflow-y-auto max-h-[90vh]">
                 <div className="flex justify-between mb-6">
                   <h2 className="text-xl font-bold dark:text-white">Novo Lançamento</h2>
                   <button onClick={() => setIsModalOpen(false)}><X className="dark:text-white"/></button>
@@ -495,7 +495,7 @@ export default function FinancesPage() {
                   <div><label className="text-sm font-medium dark:text-slate-300">Classificação</label><select {...register('classification')} className="w-full h-10 rounded-md border bg-transparent px-3 text-sm dark:border-slate-800 dark:text-white dark:bg-slate-950"><option value="variavel">Variável</option><option value="fixo">Fixo</option></select></div>
                   <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800"><div className="flex items-center gap-2 mb-2"><Repeat className="h-4 w-4 text-slate-500"/><label className="text-sm font-medium dark:text-slate-300">Repetir por (meses)</label></div><div className="flex gap-2 items-center"><Input type="number" min="1" max="60" {...register('repeat_months')} className="dark:bg-slate-950 w-20" defaultValue="1"/><span className="text-xs text-slate-500">Ex: 6 para contrato semestral. (1 = hoje)</span></div></div>
                   <div><label className="text-sm font-medium dark:text-slate-300">Observações</label><textarea {...register('notes')} className="w-full p-2 border rounded-md dark:bg-slate-950 dark:border-slate-800 dark:text-white" rows={2}></textarea></div>
-                  <Button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 dark:bg-white dark:text-slate-900 mt-2">{isSubmitting ? <Loader2 className="animate-spin"/> : 'Salvar Lançamento'}</Button>
+                  <Button type="submit" disabled={isSubmitting} className="w-full bg-purple-600 hover:bg-purple-700 text-white mt-2 rounded-xl shadow-sm shadow-purple-600/20">{isSubmitting ? <Loader2 className="animate-spin"/> : 'Salvar Lançamento'}</Button>
               </form>
            </div>
         </div>

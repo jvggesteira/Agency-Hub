@@ -391,7 +391,7 @@ export default function TasksPage() {
   // --- Renderização ---
   if (!can('tasks', 'view')) {
     return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950">
+      <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a]">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header />
@@ -402,7 +402,7 @@ export default function TasksPage() {
   }
 
   const TaskCardList = ({ task }: { task: Task }) => (
-    <div className="bg-white dark:bg-slate-900 rounded-lg p-4 border border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow mb-3 flex justify-between items-center">
+    <div className="bg-white dark:bg-white/[0.04] rounded-2xl p-4 border border-slate-200/80 dark:border-white/[0.06] hover:shadow-md transition-shadow mb-3 flex justify-between items-center">
       <div>
         <h3 className="font-semibold text-slate-900 dark:text-white">{task.title}</h3>
         <p className="text-sm text-slate-500">{task.client_name} • {task.assignee_name || 'Sem responsável'}</p>
@@ -415,56 +415,56 @@ export default function TasksPage() {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Tarefas</h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">Gerencie tarefas, prazos e responsáveis</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Tarefas</h1>
+            <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Gerencie tarefas, prazos e responsáveis</p>
           </div>
 
           {/* DASHBOARD */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+             <div className="bg-white dark:bg-white/[0.04] p-4 rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm">
                 <p className="text-xs text-slate-500 uppercase font-bold">Total</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.total}</p>
              </div>
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-slate-400 shadow-sm">
+             <div className="bg-white dark:bg-white/[0.04] p-4 rounded-2xl border-l-4 border-l-slate-400 shadow-sm">
                 <p className="text-xs text-slate-500 uppercase font-bold">Pendentes</p>
                 <p className="text-2xl font-bold text-slate-500">{stats.pending}</p>
              </div>
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-blue-500 shadow-sm">
+             <div className="bg-white dark:bg-white/[0.04] p-4 rounded-2xl border-l-4 border-l-blue-500 shadow-sm">
                 <p className="text-xs text-slate-500 uppercase font-bold">Em Andamento</p>
                 <p className="text-2xl font-bold text-blue-500">{stats.inProgress}</p>
              </div>
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-green-500 shadow-sm">
+             <div className="bg-white dark:bg-white/[0.04] p-4 rounded-2xl border-l-4 border-l-green-500 shadow-sm">
                 <p className="text-xs text-slate-500 uppercase font-bold">Concluídas</p>
                 <p className="text-2xl font-bold text-green-500">{stats.done}</p>
              </div>
-             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border-l-4 border-l-red-500 shadow-sm">
+             <div className="bg-white dark:bg-white/[0.04] p-4 rounded-2xl border-l-4 border-l-red-500 shadow-sm">
                 <p className="text-xs text-slate-500 uppercase font-bold">Canceladas</p>
                 <p className="text-2xl font-bold text-red-500">{stats.canceled}</p>
              </div>
           </div>
 
           {/* CONTROLES */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-colors">
+          <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6 transition-colors">
             <div className="flex flex-col md:flex-row items-center gap-4 mb-6">
               <div className="flex-1 relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                 <input
                   type="text" placeholder="Buscar tarefas..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-transparent dark:text-white"
+                  className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-white/10 rounded-lg bg-transparent dark:text-white"
                 />
               </div>
               <div className="flex gap-2 w-full md:w-auto">
                 <button onClick={() => setIsFilterModalOpen(true)} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300">
                   <Filter className="h-5 w-5" /> Filtros
                 </button>
-                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700">
+                <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-white/10">
                   <button onClick={() => setViewMode('kanban')} className={`p-2 rounded ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}><LayoutGrid className="h-5 w-5" /></button>
                   <button onClick={() => setViewMode('list')} className={`p-2 rounded ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 shadow' : ''}`}><List className="h-5 w-5" /></button>
                 </div>
@@ -472,7 +472,7 @@ export default function TasksPage() {
                   onClick={() => {
                     setEditingTask(null); setActiveTab('details'); reset({ priority: 'media', status: 'pendente' }); setComments([]); setIsModalOpen(true);
                   }}
-                  className="bg-slate-900 text-white px-6 py-2 rounded-lg hover:bg-slate-800 flex items-center gap-2 dark:bg-white dark:text-slate-900"
+                  className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 px-6 py-2 flex items-center gap-2"
                 >
                   <Plus className="h-5 w-5" /> Nova
                 </button>
@@ -481,7 +481,7 @@ export default function TasksPage() {
 
             {/* KANBAN / LISTA */}
             {loading ? (
-              <div className="text-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div></div>
+              <div className="text-center py-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div></div>
             ) : filteredTasks.length === 0 ? (
               <div className="text-center py-12 text-slate-500">
                 <CheckSquare className="h-12 w-12 mx-auto mb-4 opacity-20" />
@@ -513,15 +513,15 @@ export default function TasksPage() {
 
       {/* MODAL DE TAREFA */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 shadow-2xl">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-slate-200 dark:border-white/10 shadow-2xl">
+            <div className="p-6 border-b border-slate-200 dark:border-white/10 flex justify-between items-center">
               <h2 className="text-xl font-bold dark:text-white">{editingTask ? 'Detalhes' : 'Nova Tarefa'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X /></button>
             </div>
 
             {editingTask && (
-              <div className="flex border-b border-slate-200 dark:border-slate-800 px-6">
+              <div className="flex border-b border-slate-200 dark:border-white/10 px-6">
                 <button onClick={() => setActiveTab('details')} className={`py-3 px-4 text-sm font-medium border-b-2 ${activeTab === 'details' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>Dados</button>
                 <button onClick={() => setActiveTab('comments')} className={`py-3 px-4 text-sm font-medium border-b-2 ${activeTab === 'comments' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>Observações ({comments.length})</button>
               </div>
@@ -530,19 +530,19 @@ export default function TasksPage() {
             <div className="flex-1 overflow-y-auto p-6">
               <div className={activeTab === 'details' ? 'block' : 'hidden'}>
                 <form id="taskForm" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                  <div><label className="block text-sm mb-1 dark:text-slate-300">Título *</label><input {...register('title')} className="w-full p-2 border rounded dark:bg-transparent dark:text-white dark:border-slate-700" /></div>
-                  <div><label className="block text-sm mb-1 dark:text-slate-300">Descrição</label><textarea {...register('description')} rows={3} className="w-full p-2 border rounded dark:bg-transparent dark:text-white dark:border-slate-700" /></div>
+                  <div><label className="block text-sm mb-1 dark:text-slate-300">Título *</label><input {...register('title')} className="w-full p-2 border rounded dark:bg-transparent dark:text-white dark:border-white/10" /></div>
+                  <div><label className="block text-sm mb-1 dark:text-slate-300">Descrição</label><textarea {...register('description')} rows={3} className="w-full p-2 border rounded dark:bg-transparent dark:text-white dark:border-white/10" /></div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm mb-1 dark:text-slate-300">Cliente</label>
-                        <select {...register('clientId')} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700">
+                        <select {...register('clientId')} className="w-full p-2 border rounded dark:bg-[#1a1230] dark:text-white dark:border-white/10">
                             <option value="">Selecione...</option>
                             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                     </div>
                     <div>
                         <label className="block text-sm mb-1 dark:text-slate-300">Responsável</label>
-                        <select {...register('assignedTo')} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700">
+                        <select {...register('assignedTo')} className="w-full p-2 border rounded dark:bg-[#1a1230] dark:text-white dark:border-white/10">
                             <option value="">Selecione...</option>
                             {/* AQUI ESTÁ A LISTA DE USUÁRIOS */}
                             {teamMembers.map(m => (
@@ -554,32 +554,32 @@ export default function TasksPage() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                      <div><label className="block text-sm mb-1 dark:text-slate-300">Prioridade</label><select {...register('priority')} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="baixa">Baixa</option><option value="media">Média</option><option value="alta">Alta</option></select></div>
-                      <div><label className="block text-sm mb-1 dark:text-slate-300">Prazo</label><input type="date" {...register('dueDate')} className="w-full p-2 border rounded dark:bg-transparent dark:text-white dark:border-slate-700" /></div>
+                      <div><label className="block text-sm mb-1 dark:text-slate-300">Prioridade</label><select {...register('priority')} className="w-full p-2 border rounded dark:bg-[#1a1230] dark:text-white dark:border-white/10"><option value="baixa">Baixa</option><option value="media">Média</option><option value="alta">Alta</option></select></div>
+                      <div><label className="block text-sm mb-1 dark:text-slate-300">Prazo</label><input type="date" {...register('dueDate')} className="w-full p-2 border rounded dark:bg-transparent dark:text-white dark:border-white/10" /></div>
                   </div>
-                  <div><label className="block text-sm mb-1 dark:text-slate-300">Status</label><select {...register('status')} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="pendente">Pendente</option><option value="em_andamento">Em Andamento</option><option value="concluida">Concluída</option><option value="cancelada">Cancelada</option></select></div>
+                  <div><label className="block text-sm mb-1 dark:text-slate-300">Status</label><select {...register('status')} className="w-full p-2 border rounded dark:bg-[#1a1230] dark:text-white dark:border-white/10"><option value="pendente">Pendente</option><option value="em_andamento">Em Andamento</option><option value="concluida">Concluída</option><option value="cancelada">Cancelada</option></select></div>
                 </form>
               </div>
 
               <div className={activeTab === 'comments' ? 'block space-y-4' : 'hidden'}>
                 <div className="space-y-4 max-h-[300px] overflow-y-auto mb-4">
                    {comments.map(c => (
-                      <div key={c.id} className="bg-slate-50 dark:bg-slate-800 p-3 rounded border dark:border-slate-700">
+                      <div key={c.id} className="bg-slate-50 dark:bg-slate-800 p-3 rounded border dark:border-white/10">
                          <div className="flex justify-between text-xs mb-1"><span className="font-bold text-blue-600">{c.user_name}</span><span className="text-slate-500">{new Date(c.created_at).toLocaleString()}</span></div>
                          <p className="text-sm dark:text-slate-300">{c.content}</p>
                       </div>
                    ))}
                 </div>
                 <div className="flex gap-2">
-                   <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddComment()} placeholder="Escreva..." className="flex-1 p-2 border rounded dark:bg-transparent dark:text-white dark:border-slate-700" />
+                   <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddComment()} placeholder="Escreva..." className="flex-1 p-2 border rounded dark:bg-transparent dark:text-white dark:border-white/10" />
                    <button onClick={handleAddComment} className="bg-blue-600 text-white p-2 rounded"><Send size={18}/></button>
                 </div>
               </div>
             </div>
 
-            <div className="p-4 border-t dark:border-slate-800 flex justify-end gap-3">
-               <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border rounded hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-white dark:border-slate-700">Cancelar</button>
-               {activeTab === 'details' && <button type="submit" form="taskForm" className="bg-slate-900 text-white px-6 py-2 rounded hover:bg-slate-800 dark:bg-white dark:text-slate-900">Salvar</button>}
+            <div className="p-4 border-t dark:border-white/10 flex justify-end gap-3">
+               <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border rounded hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-white dark:border-white/10">Cancelar</button>
+               {activeTab === 'details' && <button type="submit" form="taskForm" className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20 px-6 py-2">Salvar</button>}
             </div>
           </div>
         </div>
@@ -587,13 +587,13 @@ export default function TasksPage() {
 
       {/* FILTROS */}
       {isFilterModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-sm w-full p-6 border dark:border-slate-800">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-md">
+          <div className="bg-white dark:bg-[#1a1230] rounded-2xl max-w-sm w-full p-6 border dark:border-white/10">
              <div className="flex justify-between mb-4"><h3 className="font-bold dark:text-white">Filtros</h3><button onClick={() => setIsFilterModalOpen(false)}><X /></button></div>
              <div className="space-y-3">
-                <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value as any)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todas Prioridades</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
-                <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos Clientes</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-900 dark:text-white dark:border-slate-700"><option value="all">Todos Responsáveis</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select>
+                <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value as any)} className="w-full p-2 border rounded dark:bg-[#1a1230] dark:text-white dark:border-white/10"><option value="all">Todas Prioridades</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
+                <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-[#1a1230] dark:text-white dark:border-white/10"><option value="all">Todos Clientes</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} className="w-full p-2 border rounded dark:bg-[#1a1230] dark:text-white dark:border-white/10"><option value="all">Todos Responsáveis</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select>
              </div>
              <div className="flex gap-3 mt-6">
                 <button onClick={() => { setPriorityFilter('all'); setClientFilter('all'); setAssigneeFilter('all'); setIsFilterModalOpen(false); }} className="flex-1 py-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-white">Limpar</button>

@@ -18,23 +18,31 @@ export default function UpdatePasswordPage() {
   useEffect(() => {
     let mounted = true;
 
-    const checkSession = async () => {
+    const checkSession = async (attempt = 1): Promise<void> => {
       // 1. Tenta pegar a sessão atual
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (session) {
-        if(mounted) setIsSessionValid(true);
-      } else {
-        // 2. Se não achar, tenta um refresh rápido (hack para cookie recente)
-        const { data: refresh } = await supabase.auth.refreshSession();
-        if (refresh.session && mounted) {
-           setIsSessionValid(true);
-        } else {
-           // Se realmente não tiver sessão, manda pro login depois de 2s
-           console.log("Sem sessão válida.");
-           setTimeout(() => router.replace('/login'), 3000);
-        }
+        if (mounted) setIsSessionValid(true);
+        return;
       }
+
+      // 2. Se não achar, tenta um refresh
+      const { data: refresh } = await supabase.auth.refreshSession();
+      if (refresh.session && mounted) {
+        setIsSessionValid(true);
+        return;
+      }
+
+      // 3. Retry até 3 vezes com delay (aguarda cookies serem processados)
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 1500));
+        if (mounted) return checkSession(attempt + 1);
+      }
+
+      // Se realmente não tiver sessão após retries, manda pro login
+      console.log("Sem sessão válida após tentativas.");
+      if (mounted) router.replace('/login');
     };
 
     checkSession();
@@ -72,17 +80,17 @@ export default function UpdatePasswordPage() {
   // Se ainda não validou a sessão, mostra loading para evitar o erro "Auth session missing"
   if (!isSessionValid) {
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 text-white gap-4">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-            <p className="text-sm text-slate-400">Verificando permissões de segurança...</p>
-            <p className="text-xs text-slate-600">(Se demorar, seu link pode ter expirado)</p>
+        <div className="flex min-h-screen flex-col items-center justify-center bg-[#0c0a1a] text-white gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+            <p className="text-sm text-white/40">Verificando permissões de segurança...</p>
+            <p className="text-xs text-white/20">(Se demorar, seu link pode ter expirado)</p>
         </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
-      <Card className="w-full max-w-md bg-slate-900 border-slate-800 text-white">
+    <div className="flex min-h-screen items-center justify-center bg-[#0c0a1a] p-4">
+      <Card className="w-full max-w-md bg-white/[0.04] border-white/[0.06] text-white rounded-2xl">
         <CardHeader>
           <CardTitle>Criar Nova Senha</CardTitle>
           <CardDescription>Sessão validada. Defina sua senha agora.</CardDescription>
@@ -98,10 +106,10 @@ export default function UpdatePasswordPage() {
                 required 
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="bg-slate-950 border-slate-700"
+                className="bg-[#0c0a1a] border-white/10"
               />
             </div>
-            <Button type="submit" className="w-full bg-white text-slate-900 hover:bg-slate-200" disabled={loading}>
+            <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20" disabled={loading}>
               {loading ? <Loader2 className="animate-spin mr-2"/> : 'Salvar e Entrar'}
             </Button>
           </form>

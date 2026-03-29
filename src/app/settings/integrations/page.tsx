@@ -7,20 +7,20 @@ import LinkNext from 'next/link';
 
 export default function IntegrationsSettingsPage() {
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a]">
       <Sidebar />
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
+
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900">Configurações de Integrações</h1>
-            <p className="text-slate-600 mt-1">Conecte serviços externos para automatizar dados e relatórios.</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Configurações de Integrações</h1>
+            <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Conecte serviços externos para automatizar dados e relatórios.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
-            <LinkNext href="/dashboards" className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer block">
+            <LinkNext href="/dashboards" className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6 hover:shadow-md transition-shadow cursor-pointer block">
               <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4">
                 <BarChart3 className="h-6 w-6 text-white" />
               </div>
@@ -28,7 +28,7 @@ export default function IntegrationsSettingsPage() {
               <p className="text-sm text-slate-600">Gerencie conexões com Meta Ads, Google Ads e outras plataformas de anúncios.</p>
             </LinkNext>
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
+            <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6 hover:shadow-md transition-shadow cursor-pointer">
               <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mb-4">
                 <Link className="h-6 w-6 text-white" />
               </div>

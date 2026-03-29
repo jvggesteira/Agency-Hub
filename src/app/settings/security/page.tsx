@@ -41,7 +41,7 @@ export default function SecuritySettingsPage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a]">
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <Header />
@@ -49,7 +49,7 @@ export default function SecuritySettingsPage() {
             <div className="max-w-2xl mx-auto">
                 <h1 className="text-2xl font-bold mb-6 dark:text-white flex items-center gap-2"><Lock/> Segurança</h1>
                 
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border dark:border-slate-800 shadow-sm">
+                <div className="bg-white dark:bg-white/[0.04] p-6 rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm">
                     <h3 className="text-lg font-semibold mb-4 dark:text-white">Alterar Senha</h3>
                     <form onSubmit={handleUpdatePassword} className="space-y-4">
                         <div>
@@ -61,7 +61,7 @@ export default function SecuritySettingsPage() {
                             <Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="dark:bg-slate-950"/>
                         </div>
                         <div className="flex justify-end pt-4">
-                            <Button type="submit" disabled={loading} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                            <Button type="submit" disabled={loading} className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20">
                                 {loading ? <Loader2 className="animate-spin"/> : <><CheckCircle className="w-4 h-4 mr-2"/> Atualizar Senha</>}
                             </Button>
                         </div>

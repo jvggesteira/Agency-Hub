@@ -50,7 +50,7 @@ export default function ProfileSettingsPage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a]">
       <Sidebar />
       <div className="flex-1 flex flex-col">
         <Header />
@@ -58,7 +58,7 @@ export default function ProfileSettingsPage() {
             <div className="max-w-2xl mx-auto">
                 <h1 className="text-2xl font-bold mb-6 dark:text-white flex items-center gap-2"><User/> Meu Perfil</h1>
                 
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border dark:border-slate-800 shadow-sm">
+                <div className="bg-white dark:bg-white/[0.04] p-6 rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm">
                     <form onSubmit={handleUpdate} className="space-y-4">
                         <div>
                             <label className="text-sm font-medium dark:text-slate-300">Email (Não editável)</label>
@@ -69,7 +69,7 @@ export default function ProfileSettingsPage() {
                             <Input value={fullName} onChange={e => setFullName(e.target.value)} className="dark:bg-slate-950"/>
                         </div>
                         <div className="flex justify-end pt-4">
-                            <Button type="submit" disabled={loading} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                            <Button type="submit" disabled={loading} className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm shadow-purple-600/20">
                                 {loading ? <Loader2 className="animate-spin"/> : <><Save className="w-4 h-4 mr-2"/> Salvar Alterações</>}
                             </Button>
                         </div>

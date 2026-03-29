@@ -110,8 +110,8 @@ export function SortableTaskCard({
       {...listeners}
       onClick={onCardClick}
       className={cn(
-        "bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative mb-3",
-        isDragging && "ring-2 ring-blue-500 shadow-xl rotate-2",
+        "bg-white dark:bg-white/[0.04] rounded-2xl p-4 border border-slate-200/80 dark:border-white/[0.06] shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing group relative mb-3",
+        isDragging && "ring-2 ring-purple-500/50 shadow-xl rotate-2",
         // Borda vermelha à esquerda se atrasado
         deadlineInfo?.label.includes('atraso') ? "border-l-4 border-l-red-500" : ""
       )}
@@ -184,7 +184,7 @@ export function SortableTaskCard({
         </div>
 
         {/* Botões de Ação (Hover) */}
-        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-2 right-2 bg-white dark:bg-slate-900 pl-2 shadow-sm rounded-tl-md">
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/5 opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-2 right-2 bg-white dark:bg-white/[0.06] pl-2 shadow-sm rounded-tl-lg">
           <button
             onPointerDown={(e) => handleAction(e, () => openEditModal(task))}
             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors z-20"

@@ -52,7 +52,7 @@ export default function SettingsPage() {
 
   if (!can('settings', 'view')) {
     return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+      <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
         <Sidebar />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header />
@@ -62,7 +62,7 @@ export default function SettingsPage() {
     );
   }
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -70,8 +70,8 @@ export default function SettingsPage() {
         
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Configurações</h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">Gerencie as configurações da sua agência</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Configurações</h1>
+            <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Gerencie as configurações da sua agência</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -81,10 +81,10 @@ export default function SettingsPage() {
                 <Link 
                   key={item.title} 
                   href={item.href}
-                  className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 hover:shadow-md transition-all cursor-pointer block h-full group"
+                  className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6 hover:shadow-md transition-all cursor-pointer block h-full group"
                 >
                   {/* Ícone Minimalista: Borda fina, sem fundo colorido */}
-                  <div className="h-12 w-12 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center mb-4 bg-slate-50 dark:bg-slate-950 group-hover:border-slate-300 dark:group-hover:border-slate-600 transition-colors">
+                  <div className="h-12 w-12 rounded-lg border border-slate-200 dark:border-white/10 flex items-center justify-center mb-4 bg-slate-50 dark:bg-[#0c0a1a] group-hover:border-slate-300 dark:group-hover:border-slate-600 transition-colors">
                     <Icon className="h-6 w-6 text-slate-700 dark:text-slate-200 stroke-[1.5]" />
                   </div>
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">{item.title}</h3>

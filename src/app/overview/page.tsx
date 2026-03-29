@@ -3,15 +3,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Sidebar } from '@/components/custom/sidebar';
 import { Header } from '@/components/custom/header';
-import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { 
+import {
   Loader2, TrendingUp, DollarSign, Users, Target, Wallet, BarChart3, Filter, Calendar, Building2
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
-// --- TIPAGEM ---
 interface GeneralData {
   report: {
     financial: { revenue: number; invested: number; netProfit: number; roi: number; roas: number; cac: number; ticket: number };
@@ -29,12 +28,12 @@ export default function GeneralOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("30");
   const [chartGrouping, setChartGrouping] = useState<'day' | 'week' | 'month'>('day');
-  
+
   const [customStart, setCustomStart] = useState(() => {
       const date = new Date();
       date.setDate(date.getDate() - 30);
       return date.toISOString().split('T')[0];
-  }); 
+  });
   const [customEnd, setCustomEnd] = useState(new Date().toISOString().split('T')[0]);
 
   const fetchOverviewData = useCallback(async () => {
@@ -60,7 +59,7 @@ export default function GeneralOverviewPage() {
 
         const query = `start=${startQuery}&end=${endQuery}&groupBy=${chartGrouping}`;
         const res = await fetch(`/api/analytics/general?${query}`);
-        
+
         if (!res.ok) throw new Error('Erro ao buscar dados');
 
         const json = await res.json();
@@ -84,29 +83,32 @@ export default function GeneralOverviewPage() {
   }, [fetchOverviewData]);
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a] transition-colors duration-300">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
+
         <main className="flex-1 overflow-y-auto p-6 space-y-6">
-            
-            {/* CABEÇALHO DA PÁGINA */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+
+            {/* Page Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white dark:bg-white/[0.04] p-6 rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                        <Building2 className="h-6 w-6 text-blue-600"/> Visão Geral de Performance GM
+                    <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                        <div className="p-2 bg-purple-50 dark:bg-purple-500/10 rounded-xl">
+                            <Building2 className="h-5 w-5 text-purple-600 dark:text-purple-400"/>
+                        </div>
+                        Visão Geral de Performance GM
                     </h1>
-                    <p className="text-slate-500 text-sm mt-1">Soma Automática: Mídia Paga + Fees de Clientes Ativos (BRL).</p>
+                    <p className="text-slate-400 dark:text-white/30 text-sm mt-1.5 ml-12">Soma Automática: Mídia Paga + Fees de Clientes Ativos (BRL).</p>
                 </div>
 
                 <div className="flex flex-col md:flex-row items-center gap-3 mt-4 md:mt-0">
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                        <Calendar className="h-4 w-4 text-slate-600"/>
-                        <select 
-                            value={timeRange} 
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-white/5 px-3 py-2 rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                        <Calendar className="h-4 w-4 text-slate-500 dark:text-white/40"/>
+                        <select
+                            value={timeRange}
                             onChange={(e) => setTimeRange(e.target.value)}
-                            className="bg-transparent font-medium text-sm focus:outline-none cursor-pointer"
+                            className="bg-transparent font-medium text-sm focus:outline-none cursor-pointer text-slate-700 dark:text-white/70"
                         >
                             <option value="7">Semanal (7 dias)</option>
                             <option value="30">Mensal (30 dias)</option>
@@ -115,14 +117,14 @@ export default function GeneralOverviewPage() {
                     </div>
                     {timeRange === 'custom' && (
                         <div className="flex items-center gap-2 animate-in fade-in">
-                            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2 py-1.5 border rounded text-xs" />
-                            <span className="text-xs">até</span>
-                            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="px-2 py-1.5 border rounded text-xs" />
+                            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="px-2.5 py-1.5 border border-slate-200 dark:border-white/10 rounded-xl text-xs bg-white dark:bg-white/5" />
+                            <span className="text-xs text-slate-400 dark:text-white/30">até</span>
+                            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="px-2.5 py-1.5 border border-slate-200 dark:border-white/10 rounded-xl text-xs bg-white dark:bg-white/5" />
                         </div>
                     )}
-                    <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
                         {(['day', 'week', 'month'] as const).map((mode) => (
-                            <button key={mode} onClick={() => setChartGrouping(mode)} className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${chartGrouping === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                            <button key={mode} onClick={() => setChartGrouping(mode)} className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${chartGrouping === mode ? 'bg-white dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 shadow-sm' : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'}`}>
                                 {mode === 'day' ? 'Diário' : mode === 'week' ? 'Semanal' : 'Mensal'}
                             </button>
                         ))}
@@ -131,71 +133,81 @@ export default function GeneralOverviewPage() {
             </div>
 
             {loading || !data ? (
-                <div className="flex h-64 w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
+                <div className="flex h-64 w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-purple-600" /></div>
             ) : (
                 <div className="space-y-6 animate-in fade-in duration-500">
-                    
-                    {/* KPI CARDS */}
+
+                    {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                        <KPICard title="Receita Total" value={formatCurrency(data.report.financial.revenue)} icon={<TrendingUp className="h-4 w-4 text-green-600" />} />
-                        <KPICard 
-                          title="Investimento Total" 
-                          value={formatCurrency(data.report.financial.invested)} 
-                          icon={<Wallet className="h-4 w-4 text-orange-600" />} 
-                          description="Mídia (Ads) + Fees Agência" 
+                        <KPICard title="Receita Total" value={formatCurrency(data.report.financial.revenue)} icon={<TrendingUp className="h-4 w-4" />} iconColor="text-green-600 dark:text-green-400" iconBg="bg-green-50 dark:bg-green-500/10" />
+                        <KPICard
+                          title="Investimento Total"
+                          value={formatCurrency(data.report.financial.invested)}
+                          icon={<Wallet className="h-4 w-4" />}
+                          iconColor="text-orange-600 dark:text-orange-400"
+                          iconBg="bg-orange-50 dark:bg-orange-500/10"
+                          description="Mídia (Ads) + Fees Agência"
                         />
-                        <KPICard 
-                            title="Lucro Líquido" 
-                            value={formatCurrency(data.report.financial.netProfit)} 
-                            icon={<DollarSign className={`h-4 w-4 ${data.report.financial.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`} />}
-                            valueColor={data.report.financial.netProfit >= 0 ? 'text-green-700' : 'text-red-700'}
+                        <KPICard
+                            title="Lucro Líquido"
+                            value={formatCurrency(data.report.financial.netProfit)}
+                            icon={<DollarSign className="h-4 w-4" />}
+                            iconColor={data.report.financial.netProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}
+                            iconBg={data.report.financial.netProfit >= 0 ? 'bg-green-50 dark:bg-green-500/10' : 'bg-red-50 dark:bg-red-500/10'}
+                            valueColor={data.report.financial.netProfit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}
                             description="Soma dos lucros reais dos clientes"
                         />
-                        <KPICard title="ROAS Médio" value={`${(data.report.financial.roas || 0).toFixed(2)}x`} icon={<BarChart3 className="h-4 w-4 text-blue-600" />} valueColor="text-blue-700" />
-                        <KPICard title="ROI Global" value={`${((data.report.financial.roi || 0) / 100).toFixed(2)}x`} icon={<Target className="h-4 w-4 text-purple-600" />} valueColor="text-purple-700" />
+                        <KPICard title="ROAS Médio" value={`${(data.report.financial.roas || 0).toFixed(2)}x`} icon={<BarChart3 className="h-4 w-4" />} iconColor="text-blue-600 dark:text-blue-400" iconBg="bg-blue-50 dark:bg-blue-500/10" valueColor="text-blue-700 dark:text-blue-400" />
+                        <KPICard title="ROI Global" value={`${((data.report.financial.roi || 0) / 100).toFixed(2)}x`} icon={<Target className="h-4 w-4" />} iconColor="text-purple-600 dark:text-purple-400" iconBg="bg-purple-50 dark:bg-purple-500/10" valueColor="text-purple-700 dark:text-purple-400" />
                     </div>
 
-                    {/* FUNIL CONSOLIDADO */}
-                    <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
+                    {/* Funnel */}
+                    <div className="bg-white dark:bg-white/[0.04] rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm overflow-hidden">
                         <div className="p-6">
-                            <h3 className="text-sm font-bold text-slate-700 mb-6 flex items-center gap-2"><Filter className="h-4 w-4"/> Funil Agregado Performance GM</h3>
-                            <div className="flex flex-col items-center justify-center space-y-1 max-w-2xl mx-auto">
-                                <PyramidLevel label="Impressões" value={formatNumber(data.report.funnel.impressions)} width="w-[100%]" color="bg-blue-50 border-blue-200 text-blue-800" />
+                            <h3 className="text-sm font-bold text-slate-700 dark:text-white/70 mb-6 flex items-center gap-2">
+                                <div className="p-1.5 bg-purple-50 dark:bg-purple-500/10 rounded-lg">
+                                    <Filter className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400"/>
+                                </div>
+                                Funil Agregado Performance GM
+                            </h3>
+                            <div className="flex flex-col items-center justify-center space-y-1.5 max-w-2xl mx-auto">
+                                <PyramidLevel label="Impressões" value={formatNumber(data.report.funnel.impressions)} width="w-[100%]" color="bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20 text-blue-800 dark:text-blue-300" />
                                 <PyramidConnector label="CTR" value={`${(data.report.funnel.ctr || 0).toFixed(2)}%`} />
-                                <PyramidLevel label="Cliques" value={formatNumber(data.report.funnel.clicks)} width="w-[85%]" color="bg-indigo-50 border-indigo-200 text-indigo-900" />
+                                <PyramidLevel label="Cliques" value={formatNumber(data.report.funnel.clicks)} width="w-[85%]" color="bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/20 text-indigo-900 dark:text-indigo-300" />
                                 <PyramidConnector label="Conv. Lead" value={`${(data.report.funnel.convLead || 0).toFixed(2)}%`} />
-                                <PyramidLevel label="Leads" value={formatNumber(data.report.funnel.leads)} width="w-[70%]" color="bg-purple-50 border-purple-200 text-purple-800" />
+                                <PyramidLevel label="Leads" value={formatNumber(data.report.funnel.leads)} width="w-[70%]" color="bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20 text-purple-800 dark:text-purple-300" />
                                 <PyramidConnector label="Fechamento" value={`${(data.report.funnel.convSales || 0).toFixed(2)}%`} />
-                                <PyramidLevel label="Vendas" value={formatNumber(data.report.funnel.sales)} width="w-[55%]" color="bg-emerald-100 border-emerald-300 text-emerald-900" />
+                                <PyramidLevel label="Vendas" value={formatNumber(data.report.funnel.sales)} width="w-[55%]" color="bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/20 text-emerald-900 dark:text-emerald-300" />
                             </div>
                         </div>
-                    </Card>
+                    </div>
 
+                    {/* Charts */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="p-6 bg-white rounded-xl border shadow-sm">
-                            <h3 className="text-sm font-semibold text-gray-500 uppercase mb-6">Crescimento de Receita</h3>
+                        <div className="p-6 bg-white dark:bg-white/[0.04] rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm">
+                            <h3 className="text-xs font-bold text-slate-400 dark:text-white/30 uppercase tracking-wider mb-6">Crescimento de Receita</h3>
                             <div className="h-[300px]">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={data.history}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                        <XAxis dataKey="date" style={{ fontSize: 11, fill: '#64748b' }} tickMargin={10} />
-                                        <YAxis style={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(val) => `R$${val/1000}k`} axisLine={false} tickLine={false} />
-                                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(value: number) => [formatCurrency(value), 'Receita']} />
-                                        <Line type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: "#2563eb", strokeWidth: 2, stroke: "#fff" }} activeDot={{ r: 6 }} />
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.15)" />
+                                        <XAxis dataKey="date" style={{ fontSize: 11 }} tickMargin={10} stroke="rgba(148,163,184,0.5)" />
+                                        <YAxis style={{ fontSize: 11 }} tickFormatter={(val) => `R$${val/1000}k`} axisLine={false} tickLine={false} stroke="rgba(148,163,184,0.5)" />
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 25px rgba(0,0,0,0.12)', background: 'white', fontSize: '13px' }} formatter={(value: number) => [formatCurrency(value), 'Receita']} />
+                                        <Line type="monotone" dataKey="revenue" stroke="#7c3aed" strokeWidth={3} dot={{ r: 4, fill: "#7c3aed", strokeWidth: 2, stroke: "#fff" }} activeDot={{ r: 6, fill: "#7c3aed", stroke: "#fff", strokeWidth: 3 }} />
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>
                         </div>
-                        <div className="p-6 bg-white rounded-xl border shadow-sm">
-                            <h3 className="text-sm font-semibold text-gray-500 uppercase mb-6">Volume de Leads</h3>
+                        <div className="p-6 bg-white dark:bg-white/[0.04] rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm">
+                            <h3 className="text-xs font-bold text-slate-400 dark:text-white/30 uppercase tracking-wider mb-6">Volume de Leads</h3>
                             <div className="h-[300px]">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={data.history}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                        <XAxis dataKey="date" style={{ fontSize: 11, fill: '#64748b' }} tickMargin={10} />
-                                        <YAxis style={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                                        <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                        <Bar dataKey="leads" fill="#f97316" radius={[4, 4, 0, 0]} barSize={chartGrouping === 'day' ? undefined : 40} />
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.15)" />
+                                        <XAxis dataKey="date" style={{ fontSize: 11 }} tickMargin={10} stroke="rgba(148,163,184,0.5)" />
+                                        <YAxis style={{ fontSize: 11 }} axisLine={false} tickLine={false} stroke="rgba(148,163,184,0.5)" />
+                                        <Tooltip cursor={{fill: 'rgba(124,58,237,0.04)'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 25px rgba(0,0,0,0.12)', background: 'white', fontSize: '13px' }} />
+                                        <Bar dataKey="leads" fill="#a855f7" radius={[6, 6, 0, 0]} barSize={chartGrouping === 'day' ? undefined : 40} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
@@ -209,21 +221,26 @@ export default function GeneralOverviewPage() {
   );
 }
 
-// --- COMPONENTES AUXILIARES ---
-function KPICard({ title, value, icon, valueColor = "text-gray-900", description }: any) {
+// --- Helper Components ---
+function KPICard({ title, value, icon, iconColor = "text-slate-600", iconBg = "bg-slate-50", valueColor = "text-slate-900 dark:text-white", description }: any) {
     return (
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <div className="flex justify-between items-start mb-2"><h3 className="text-sm font-medium text-slate-500">{title}</h3><div className="p-2 bg-slate-50 rounded-lg">{icon}</div></div>
+      <div className="card-hover bg-white dark:bg-white/[0.04] p-5 rounded-2xl border border-slate-200/80 dark:border-white/[0.06] shadow-sm">
+        <div className="flex justify-between items-start mb-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">{title}</h3>
+          <div className={`p-2 ${iconBg} rounded-xl`}>
+            <span className={iconColor}>{icon}</span>
+          </div>
+        </div>
         <div className={`text-2xl font-bold ${valueColor} mb-1`}>{value}</div>
-        {description && <p className="text-xs text-slate-400 mt-1 uppercase font-bold">{description}</p>}
+        {description && <p className="text-[10px] text-slate-400 dark:text-white/25 mt-1 uppercase font-bold tracking-wide">{description}</p>}
       </div>
     );
 }
 
-function PyramidLevel({ label, value, width, color }: any) { 
+function PyramidLevel({ label, value, width, color }: any) {
   return (
     <div className={`${width} relative group transition-all duration-500`}>
-      <div className={`flex justify-between items-center px-4 py-3 rounded-lg border-2 ${color} shadow-sm relative z-10`}>
+      <div className={`flex justify-between items-center px-5 py-3.5 rounded-xl border-2 ${color} relative z-10`}>
         <span className="font-bold text-xs uppercase tracking-wider opacity-80">{label}</span>
         <div className="flex items-center gap-2"><span className="font-bold text-lg">{value}</span></div>
       </div>
@@ -231,11 +248,11 @@ function PyramidLevel({ label, value, width, color }: any) {
   );
 }
 
-function PyramidConnector({ label, value }: any) { 
+function PyramidConnector({ label, value }: any) {
   return (
     <div className="h-8 flex items-center justify-center relative w-full">
-      <div className="h-full w-0.5 bg-slate-200 absolute top-0"></div>
-      <div className="z-10 bg-white border border-slate-200 px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-500 shadow-sm flex gap-1">
+      <div className="h-full w-0.5 bg-slate-200 dark:bg-white/10 absolute top-0"></div>
+      <div className="z-10 bg-white dark:bg-[#1a1230] border border-slate-200 dark:border-white/10 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-slate-500 dark:text-white/50 shadow-sm flex gap-1">
         <span>{label}: {value}</span>
       </div>
     </div>

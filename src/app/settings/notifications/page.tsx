@@ -8,19 +8,19 @@ import { Label } from '@/components/ui/label';
 
 export default function NotificationsSettingsPage() {
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#0c0a1a]">
       <Sidebar />
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        
+
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900">Configurações de Notificações</h1>
-            <p className="text-slate-600 mt-1">Gerencie como e quando você recebe alertas.</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Configurações de Notificações</h1>
+            <p className="text-slate-500 dark:text-white/40 text-sm mt-1">Gerencie como e quando você recebe alertas.</p>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-w-3xl space-y-6">
+          <div className="bg-white dark:bg-white/[0.04] rounded-2xl shadow-sm border border-slate-200/80 dark:border-white/[0.06] p-6 max-w-3xl space-y-6">
             <h2 className="text-xl font-semibold mb-4">Alertas de Performance</h2>
             
             <div className="flex items-center justify-between border-b pb-4">

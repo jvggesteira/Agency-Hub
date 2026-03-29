@@ -23,7 +23,7 @@ export async function inviteUser(formData: FormData) {
   const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName }, // Grava o nome nos dados do usuário
     // Onde o usuário vai cair quando clicar no link do email (ajuste se precisar)
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/dashboard`,
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/callback?next=/update-password`,
   });
 
   if (error) {

@@ -41,18 +41,10 @@ function VerifyContent() {
       if (!error) {
         console.log("✅ Token válido! Redirecionando...");
         setStatus('Sucesso! Entrando...');
-        
-        // Se a sessão foi criada, passamos o bastão via URL para garantir
-        if (data.session) {
-            const accessToken = data.session.access_token;
-            const refreshToken = data.session.refresh_token;
-            // Redirecionamento forçado com tokens
-            window.location.href = `${next}?access_token=${accessToken}&refresh_token=${refreshToken}`;
-        } else {
-            // Fallback
-            window.location.href = next;
-        }
-        
+
+        // Sessão já foi estabelecida pelo verifyOtp no client-side (cookies gerenciados pelo @supabase/ssr)
+        // Redireciona sem expor tokens na URL
+        router.replace(next);
       } else {
         console.error('❌ Erro:', error);
         // Só mostra erro se realmente falhou
@@ -66,8 +58,8 @@ function VerifyContent() {
 
   if (errorDetails) {
       return (
-          <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white p-4">
-            <div className="p-6 bg-red-900/30 border border-red-800 rounded-lg max-w-md text-center">
+          <div className="flex min-h-screen items-center justify-center bg-[#0c0a1a] text-white p-4">
+            <div className="p-6 bg-red-900/30 border border-red-800 rounded-2xl max-w-md text-center">
                 <p className="font-bold text-lg mb-2">Link Expirado</p> 
                 <p className="text-sm text-slate-300 mb-4">{errorDetails}</p>
                 <button 
@@ -82,10 +74,10 @@ function VerifyContent() {
   }
 
   return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+      <div className="flex min-h-screen items-center justify-center bg-[#0c0a1a] text-white">
         <div className="text-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-slate-400">{status}</p>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="text-white/40">{status}</p>
         </div>
       </div>
   );
@@ -93,7 +85,7 @@ function VerifyContent() {
 
 export default function VerifyPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">Carregando...</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#0c0a1a] text-white">Carregando...</div>}>
         <VerifyContent />
     </Suspense>
   );

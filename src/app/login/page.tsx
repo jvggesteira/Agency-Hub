@@ -18,7 +18,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex h-screen items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-slate-200">
+      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg border border-slate-200/80">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Bem-vindo ao AgencyHub</h1>
           <p className="text-slate-500 text-sm mt-2">Entre com suas credenciais para continuar</p>
@@ -32,8 +32,8 @@ export default function LoginPage() {
             variables: {
               default: {
                 colors: {
-                  brand: '#0f172a', // Slate 900
-                  brandAccent: '#334155', // Slate 700
+                  brand: '#9333ea', // Purple 600
+                  brandAccent: '#7e22ce', // Purple 700
                 },
                 radii: {
                   borderRadiusButton: '0.5rem',
@@ -42,7 +42,7 @@ export default function LoginPage() {
               },
             },
             className: {
-                button: 'w-full px-4 py-2 bg-slate-900 text-white hover:bg-slate-800 transition-colors',
+                button: 'w-full px-4 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded-xl shadow-sm shadow-purple-600/20 transition-colors',
                 input: 'w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent',
             }
           }}
