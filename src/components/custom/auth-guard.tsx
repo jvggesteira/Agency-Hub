@@ -7,12 +7,13 @@ import React, { useEffect, useState } from 'react';
 // 1. LISTA ATUALIZADA (Incluindo a raiz '/')
 const PUBLIC_ROUTES = [
   '/',                 // <--- ADICIONADO: Raiz agora é pública (o page.tsx gerencia o redirect)
-  '/login', 
-  '/signup', 
-  '/forgot-password', 
-  '/verify',           
-  '/update-password',  
-  '/auth/callback'     
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/verify',
+  '/update-password',
+  '/auth/callback',
+  '/acompanhamento',
 ];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {

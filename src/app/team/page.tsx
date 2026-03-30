@@ -8,10 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast'; 
 import { usePermission } from '@/hooks/use-permission';
+import { useAuth } from '@/hooks/use-auth';
 import AccessDenied from '@/components/custom/access-denied';
-import { supabase } from '@/lib/supabase'; // Importação direta do Supabase client
-import { 
-    UserPlus, Shield, CheckCircle2, Save, Trash2, LayoutTemplate, Users, Loader2, Mail 
+import { supabase } from '@/lib/supabase';
+import {
+    UserPlus, Shield, CheckCircle2, Save, Trash2, LayoutTemplate, Users, Loader2, Mail
 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO DOS MÓDULOS ---
@@ -30,6 +31,7 @@ const MODULES = [
   { id: 'team', label: 'Gestão de Equipe' },
   { id: 'settings', label: 'Configurações' },
   { id: 'crm', label: 'CRM (Vendas)' },
+  { id: 'disparos', label: 'Gestão de Disparos' },
 ];
 
 type PermissionState = {
@@ -48,8 +50,13 @@ const EMPTY_PERMISSIONS: PermissionState = MODULES.reduce((acc, module) => ({
 
 export default function TeamPage() {
   const { can } = usePermission();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  // Verifica se o usuário logado é admin/manager
+  const isAdmin = user?.email === 'jvggesteira@gmail.com' || user?.role === 'admin' || user?.role === 'manager';
   
   const [permissions, setPermissions] = useState<PermissionState>(EMPTY_PERMISSIONS);
   const [savedRoles, setSavedRoles] = useState<any[]>([]);
@@ -182,19 +189,30 @@ export default function TeamPage() {
     }
   }
 
-  // --- FUNÇÃO PARA REMOVER MEMBRO (Visualmente e do Banco) ---
-  const handleRemoveMember = async (id: string) => {
-      if(!confirm("Tem certeza que deseja remover este membro da equipe? Ele perderá o acesso.")) return;
-      
-      // Remove da tabela profiles (o que impede o login no frontend)
-      // Nota: Para segurança total, idealmente deveria remover do Auth via API também, mas isso resolve o acesso imediato ao app.
-      const { error } = await supabase.from('profiles').delete().eq('id', id);
-      
-      if(error) {
+  // --- FUNÇÃO PARA REMOVER MEMBRO (Auth + Profiles via API segura) ---
+  const handleRemoveMember = async (id: string, memberName: string) => {
+      if (!confirm(`Tem certeza que deseja remover "${memberName}" da equipe?\n\nEssa ação é irreversível. O usuário perderá todo o acesso ao sistema.`)) return;
+
+      setRemovingId(id);
+      try {
+          const response = await fetch('/api/remove-member', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ memberId: id }),
+          });
+
+          const result = await response.json();
+
+          if (response.ok && result.success) {
+              toast({ title: "Membro removido", description: `${memberName} foi removido do sistema.`, className: "bg-green-600 text-white border-none" });
+              loadTeamMembers();
+          } else {
+              throw new Error(result.error || 'Erro desconhecido');
+          }
+      } catch (error: any) {
           toast({ title: "Erro ao remover", description: error.message, variant: "destructive" });
-      } else {
-          toast({ title: "Membro removido", description: "O acesso foi revogado." });
-          loadTeamMembers();
+      } finally {
+          setRemovingId(null);
       }
   };
 
@@ -406,13 +424,20 @@ export default function TeamPage() {
                                                 </div>
                                                 <p className="text-xs text-slate-500 truncate pl-8">{member.email}</p>
                                             </div>
-                                            <button 
-                                                onClick={() => handleRemoveMember(member.id)}
-                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors opacity-0 group-hover:opacity-100"
-                                                title="Remover acesso"
-                                            >
-                                                <Trash2 className="h-4 w-4"/>
-                                            </button>
+                                            {isAdmin && member.id !== user?.id && (
+                                                <button
+                                                    onClick={() => handleRemoveMember(member.id, member.name || member.email)}
+                                                    disabled={removingId === member.id}
+                                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                                                    title="Remover acesso"
+                                                >
+                                                    {removingId === member.id ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin"/>
+                                                    ) : (
+                                                        <Trash2 className="h-4 w-4"/>
+                                                    )}
+                                                </button>
+                                            )}
                                         </div>
                                         <div className="mt-3 pl-8 flex gap-2">
                                             <span className="text-[10px] uppercase font-bold tracking-wider bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded">

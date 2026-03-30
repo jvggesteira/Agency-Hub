@@ -14,9 +14,10 @@ export type ModuleName =
   | 'documents' 
   | 'goals' 
   | 'alerts' 
-  | 'team' 
-  | 'settings' 
-  | 'crm';
+  | 'team'
+  | 'settings'
+  | 'crm'
+  | 'disparos';
 
 export type ActionName = 'view' | 'create' | 'edit' | 'delete';
 

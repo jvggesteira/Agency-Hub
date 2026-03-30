@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Users, DollarSign,
   BarChart2, PieChart, Briefcase, Folder,
   Users2, Settings, LogOut,
-  ChevronLeft, ChevronRight, BarChart3, Megaphone, Building2
+  ChevronLeft, ChevronRight, BarChart3, Megaphone, Building2, Send
 } from 'lucide-react';
 
 const navigation = [
@@ -21,6 +21,7 @@ const navigation = [
   { name: 'DRE', href: '/dre', icon: BarChart2 },
   { name: 'Dashboards', href: '/dashboards', icon: PieChart },
   { name: 'Projetos Freelancer', href: '/freelancer-projects', icon: Briefcase },
+  { name: 'Disparos', href: '/disparos', icon: Send },
   { name: 'Documentos', href: '/documents', icon: Folder },
   { name: 'Equipe', href: '/team', icon: Users2 },
   { name: 'Configurações', href: '/settings', icon: Settings },
