@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "Bash(npm run:*)",
+      "Bash(cp:*)",
+      "Bash(pkill:*)",
+      "Bash(taskkill:*)",
+      "Bash(lsof +D:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(powershell:*)",
+      "Bash(cd \"C:\\\\Users\\\\joaov\\\\projetos-antigravity\\\\Agency-Hub\" && npx next build 2>&1 | head -50)",
+      "Bash(cd \"C:\\\\Users\\\\joaov\\\\projetos-antigravity\\\\Agency-Hub\" && npx next build 2>&1 | tail -20)"
+    ]
+  }
+}
