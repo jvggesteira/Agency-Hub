@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS disparo_dispatches (
   delivered_messages INT NOT NULL,
   redirection_cost NUMERIC(10,2),
   notes TEXT,
+  -- Planilha Excel de contatos enviada pelo cliente
+  contact_file_url TEXT,
+  contact_file_name VARCHAR(500),
+  -- Quantidade de contatos na base recebida
+  contact_count INT,
+  -- Lista de números para redirecionamento (JSON array)
+  redirect_numbers JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -60,7 +67,17 @@ CREATE TABLE IF NOT EXISTS disparo_results (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 5. Tabela de contatos por disparo (números de redirecionamento)
+CREATE TABLE IF NOT EXISTS disparo_dispatch_contacts (
+  id BIGSERIAL PRIMARY KEY,
+  dispatch_id BIGINT NOT NULL REFERENCES disparo_dispatches(id) ON DELETE CASCADE,
+  phone VARCHAR(30) NOT NULL,
+  name VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Índices para performance
+CREATE INDEX IF NOT EXISTS idx_disparo_dispatch_contacts_dispatch ON disparo_dispatch_contacts(dispatch_id);
 CREATE INDEX IF NOT EXISTS idx_disparo_packages_client ON disparo_packages(client_id);
 CREATE INDEX IF NOT EXISTS idx_disparo_dispatches_package ON disparo_dispatches(package_id);
 CREATE INDEX IF NOT EXISTS idx_disparo_dispatches_client ON disparo_dispatches(client_id);
@@ -92,3 +109,18 @@ CREATE TRIGGER update_disparo_clients_updated_at BEFORE UPDATE ON disparo_client
 CREATE TRIGGER update_disparo_packages_updated_at BEFORE UPDATE ON disparo_packages FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_disparo_dispatches_updated_at BEFORE UPDATE ON disparo_dispatches FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_disparo_results_updated_at BEFORE UPDATE ON disparo_results FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS para tabela de contatos
+ALTER TABLE disparo_dispatch_contacts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Authenticated users can manage disparo_dispatch_contacts" ON disparo_dispatch_contacts FOR ALL USING (auth.role() = 'authenticated');
+
+-- Storage bucket para planilhas de contatos
+INSERT INTO storage.buckets (id, name, public) VALUES ('disparo-files', 'disparo-files', false)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "Authenticated users can upload disparo files" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'disparo-files' AND auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can read disparo files" ON storage.objects
+  FOR SELECT USING (bucket_id = 'disparo-files' AND auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can delete disparo files" ON storage.objects
+  FOR DELETE USING (bucket_id = 'disparo-files' AND auth.role() = 'authenticated');

@@ -307,14 +307,18 @@ export async function getClientStats(clientId: number) {
     totalPartner += net / 2;
   }
 
-  // Client-level refunds: refunded messages go back to balance
+  // Client-level refunds: subtract from balance AND from financials
   const clientRefunds = await getClientRefunds(clientId);
   const totalClientRefunded = clientRefunds.reduce((s, r) => s + r.refunded_messages, 0);
+  const totalRefundGross = clientRefunds.reduce((s, r) => s + Number(r.refund_gross), 0);
+  const totalRefundPlatform = clientRefunds.reduce((s, r) => s + Number(r.platform_cost_per_message) * r.refunded_messages, 0);
+  const totalRefundCompany = clientRefunds.reduce((s, r) => s + Number(r.refund_company), 0);
+  const totalRefundPartner = clientRefunds.reduce((s, r) => s + Number(r.refund_partner), 0);
 
   return {
     totalContracted, totalDelivered, totalBalance: totalContracted - totalDelivered - totalClientRefunded,
-    totalGrossRevenue: totalGross, totalPlatformCost,
-    totalCompanyRevenue: totalCompany, totalPartnerRevenue: totalPartner,
+    totalGrossRevenue: totalGross - totalRefundGross, totalPlatformCost: totalPlatformCost - totalRefundPlatform,
+    totalCompanyRevenue: totalCompany - totalRefundCompany, totalPartnerRevenue: totalPartner - totalRefundPartner,
     totalDispatches: allDisps.length, totalClientRefunded,
   };
 }
