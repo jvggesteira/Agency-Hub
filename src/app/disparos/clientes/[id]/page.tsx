@@ -127,7 +127,7 @@ export default function ClientDetailPage() {
   const [dispOpen, setDispOpen] = useState(false);
   const [dispEditId, setDispEditId] = useState<number | null>(null);
   const [dispDeleteId, setDispDeleteId] = useState<number | null>(null);
-  const [dispForm, setDispForm] = useState({ packageId: '', name: '', dispatchDate: '', sentMessages: '', deliveredMessages: '', readMessages: '', repliedMessages: '', clickedMessages: '', redirectionCost: '', notes: '', contactFileUrl: '', contactFileName: '', contactCount: '', redirectNumbers: '' });
+  const [dispForm, setDispForm] = useState({ packageId: '', name: '', dispatchDate: '', sentMessages: '', deliveredMessages: '', readMessages: '', repliedMessages: '', clickedMessages: '', hasRedirectionCost: false, redirectionCost: '', notes: '', contactFileUrl: '', contactFileName: '', contactCount: '', redirectNumbers: '' });
   const [dispSaving, setDispSaving] = useState(false);
   const [dispFile, setDispFile] = useState<File | null>(null);
   const [dispFileUploading, setDispFileUploading] = useState(false);
@@ -311,7 +311,7 @@ export default function ClientDetailPage() {
   }
 
   // ─── Dispatch Handlers ───────────────────────────────────────────────────────
-  const resetDispForm = () => { setDispForm({ packageId: '', name: '', dispatchDate: '', sentMessages: '', deliveredMessages: '', readMessages: '', repliedMessages: '', clickedMessages: '', redirectionCost: '', notes: '', contactFileUrl: '', contactFileName: '', contactCount: '', redirectNumbers: '' }); setDispFile(null); };
+  const resetDispForm = () => { setDispForm({ packageId: '', name: '', dispatchDate: '', sentMessages: '', deliveredMessages: '', readMessages: '', repliedMessages: '', clickedMessages: '', hasRedirectionCost: false, redirectionCost: '', notes: '', contactFileUrl: '', contactFileName: '', contactCount: '', redirectNumbers: '' }); setDispFile(null); };
 
   async function handleDispSubmit() {
     setDispSaving(true);
@@ -661,7 +661,7 @@ export default function ClientDetailPage() {
                                 <button onClick={() => openResultForm(d.id)} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-purple-500" title="Resultados">
                                   <BarChart3 className="h-3.5 w-3.5" />
                                 </button>
-                                <button onClick={() => { setDispEditId(d.id); setDispForm({ packageId: String(d.package_id), name: d.name, dispatchDate: toLocalDate(d.dispatch_date), sentMessages: String(d.sent_messages), deliveredMessages: String(d.delivered_messages), readMessages: d.read_messages ? String(d.read_messages) : '', repliedMessages: d.replied_messages ? String(d.replied_messages) : '', clickedMessages: d.clicked_messages ? String(d.clicked_messages) : '', redirectionCost: d.redirection_cost ? String(d.redirection_cost) : '', notes: d.notes || '', contactFileUrl: d.contact_file_url || '', contactFileName: d.contact_file_name || '', contactCount: d.contact_count ? String(d.contact_count) : '', redirectNumbers: (d.redirect_numbers || []).join('\n') }); setDispFile(null); setDispOpen(true); }}
+                                <button onClick={() => { setDispEditId(d.id); setDispForm({ packageId: String(d.package_id), name: d.name, dispatchDate: toLocalDate(d.dispatch_date), sentMessages: String(d.sent_messages), deliveredMessages: String(d.delivered_messages), readMessages: d.read_messages ? String(d.read_messages) : '', repliedMessages: d.replied_messages ? String(d.replied_messages) : '', clickedMessages: d.clicked_messages ? String(d.clicked_messages) : '', hasRedirectionCost: d.redirection_cost != null && d.redirection_cost > 0, redirectionCost: d.redirection_cost ? String(d.redirection_cost) : '', notes: d.notes || '', contactFileUrl: d.contact_file_url || '', contactFileName: d.contact_file_name || '', contactCount: d.contact_count ? String(d.contact_count) : '', redirectNumbers: (d.redirect_numbers || []).join('\n') }); setDispFile(null); setDispOpen(true); }}
                                   className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-900 dark:hover:text-white" title="Editar">
                                   <Pencil className="h-3.5 w-3.5" />
                                 </button>
@@ -1057,13 +1057,13 @@ export default function ClientDetailPage() {
             </div>
             <div className="p-3 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={!!dispForm.redirectionCost && dispForm.redirectionCost !== '0'} onChange={e => setDispForm(f => ({ ...f, redirectionCost: e.target.checked ? (client?.redirection_cost_per_message ? String(client.redirection_cost_per_message) : '') : '' }))} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500" />
+                <input type="checkbox" checked={dispForm.hasRedirectionCost} onChange={e => setDispForm(f => ({ ...f, hasRedirectionCost: e.target.checked, redirectionCost: e.target.checked ? (client?.redirection_cost_per_message ? String(client.redirection_cost_per_message) : '0') : '' }))} className="rounded border-slate-300 text-purple-600 focus:ring-purple-500" />
                 <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">Cobrar redirecionamento neste disparo</span>
               </label>
-              {dispForm.redirectionCost && dispForm.redirectionCost !== '0' && (
+              {dispForm.hasRedirectionCost && (
                 <div><Label>Valor do Redirecionamento (R$)</Label><Input type="number" step="0.01" value={dispForm.redirectionCost} onChange={e => setDispForm(f => ({ ...f, redirectionCost: e.target.value }))} placeholder="Ex: 50.00" /></div>
               )}
-              {!dispForm.redirectionCost && <p className="text-xs text-amber-600 dark:text-amber-400">Sem custo de redirecionamento (ex: disparo de teste/validação).</p>}
+              {!dispForm.hasRedirectionCost && <p className="text-xs text-amber-600 dark:text-amber-400">Sem custo de redirecionamento (ex: disparo de teste/validação).</p>}
             </div>
 
             {/* ── Seção: Base de Contatos (Excel) ── */}
